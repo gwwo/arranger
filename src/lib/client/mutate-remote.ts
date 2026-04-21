@@ -227,6 +227,8 @@ export const useCreateProject = createMutator(
     insert(state.projects, index, project);
     const panel = state.panels.find(({ id }) => id === ctx.panelId);
     if (panel != null) {
+      // wire up the reactive project, not the init one
+      const project = state.projects[index];
       panel.instance = newProjectInstance({ project });
     }
     return { id: project.id };
