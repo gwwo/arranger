@@ -62,107 +62,157 @@
   const TRANSITION_MS = 500;
 
   const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+  export type Layout = {
+    sideShow: boolean;
+    sideWidth: number | null;
+  };
 </script>
 
 <script lang="ts">
   import { untrack } from "svelte";
 
   type Props = {
-    sideShow?: boolean;
-    sideWidth?: number | null;
+    layout?: Layout;
   };
 
-  let { sideShow = $bindable(true), sideWidth = $bindable(200) }: Props = $props();
+  let { layout: layoutSource = $bindable({ sideShow: true, sideWidth: 50 }) }: Props = $props();
+
+  const layout = $state({
+    sideWidthRaw: clamp(layoutSource.sideWidth ?? 0, 0, MAX_SIDE_WIDTH),
+    sideWidthContent: clamp(layoutSource.sideWidth ?? 0, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH),
+    ...layoutSource,
+  });
+
+  $effect(() => {
+    const source = { ...layoutSource };
+    untrack(() => Object.assign(layout, source));
+  });
 
   let resizingSide = $state(false);
-  let sideWidthRaw = $state(clamp(sideWidth ?? 0, 0, MAX_SIDE_WIDTH));
-
-  let sideWidthContent: number | null = $state(clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH));
-
   let sideTransition: symbol | null = $state(null);
-  let lastSideWidthRaw = sideWidthRaw;
 
+  let sideDerender = $derived(
+    !resizingSide && sideTransition === null && layout.sideWidthRaw === 0,
+  );
+
+  let lastSideWidthRaw = layout.sideWidthRaw;
   $effect.pre(() => {
-    const w = sideWidthRaw;
+    const { sideWidthRaw } = layout;
     untrack(() => {
-      const next = clamp(w, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
-      if (resizingSide || sideWidthContent == null) {
-        sideWidthContent = next;
+      if (resizingSide || sideWidthRaw > lastSideWidthRaw) {
+        layout.sideWidthContent = clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
       }
     });
     untrack(() => {
       if (resizingSide) return;
-      if (lastSideWidthRaw === w) return;
+      if (lastSideWidthRaw === sideWidthRaw) return;
       // each sideTransition request is uniquely non-null
       sideTransition = Symbol();
     });
-    lastSideWidthRaw = w;
+    lastSideWidthRaw = sideWidthRaw;
   });
 
   const endTransitionState = () => {
-    if (!sideShow) sideWidthContent = null;
+    const { sideWidthRaw } = layout;
+    layout.sideWidthContent = clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
     sideTransition = null; // setting sideTransition will clear the timer.
   };
 
   $effect.pre(() => {
     if (sideTransition == null) return;
-    let timer = untrack(() => setTimeout(endTransitionState, TRANSITION_MS + 50));
+    let timer = setTimeout(endTransitionState, TRANSITION_MS + 50);
     return () => clearTimeout(timer);
   });
 
   $effect.pre(() => {
-    sideShow;
+    const { sideShow, sideWidth } = layout;
     untrack(() => {
-      if (sideWidth != null) {
-        sideWidthRaw = sideShow ? clamp(sideWidth, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH) : 0;
-      }
+      layout.sideWidthRaw =
+        sideWidth != null && sideShow ? clamp(sideWidth, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH) : 0;
     });
-  });
-
-  $effect(() => {
-    if (!resizingSide) {
-      // whenever resizing finishes
-      untrack(() => {
-        sideShow = sideWidthRaw > 0;
-        if (sideShow && sideWidth != null) sideWidth = sideWidthRaw;
-        if (!sideShow && sideTransition == null) sideWidthContent = null;
-      });
-    }
   });
 
   const sideControl = useDragControl({
     onClick: () => {
-      sideShow = !sideShow;
+      const sideShow = !layout.sideShow;
+      layout.sideShow = sideShow;
+      setTimeout(() => {
+        layoutSource.sideShow = sideShow;
+      }, 2000);
     },
     onStart: () => {
       resizingSide = true;
+      const { sideWidthRaw } = layout;
       return { sideWidthRaw };
     },
     onMove: (dx, dy, start) => {
       if (dx === 0) return;
       const freeWidth = start.sideWidthRaw + dx;
       const nextWidth = clamp(freeWidth, 0, MAX_SIDE_WIDTH);
-      sideWidthRaw = nextWidth;
+      layout.sideWidthRaw = nextWidth;
     },
     onFinish: () => {
       resizingSide = false;
+      const { sideWidthRaw } = layout;
       const endWidth =
         sideWidthRaw <= COLLAPSE_WIDTH ? 0 : clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
-      sideWidthRaw = endWidth;
+      const sideShow = endWidth > 0;
+
+      layout.sideWidthRaw = endWidth;
+      layout.sideShow = sideShow;
+
+      const updateSideWidth = sideShow;
+      if (updateSideWidth) layout.sideWidth = endWidth;
+
+      setTimeout(() => {
+        layoutSource.sideShow = sideShow;
+        if (updateSideWidth) layoutSource.sideWidth = endWidth;
+      }, 2000);
     },
   });
 </script>
 
 <div class="fixed top-0 left-0">
-  sideShow: {sideShow}; resizingSide: {resizingSide}; sideWidth: {sideWidth ?? "null"};
-  sideWidthContent: {sideWidthContent ?? "null"}; sideTransition: {sideTransition != null};
-  sideWidthRaw: {sideWidthRaw}
+  <p>
+    sideShow: {layout.sideShow}; resizingSide: {resizingSide}; sideWidth: {layout.sideWidth ??
+      "null"}; sideWidthContent: {layout.sideWidthContent ?? "null"}; sideTransition: {sideTransition !=
+      null}; sideWidthRaw: {layout.sideWidthRaw} sideDerender: {sideDerender}
+  </p>
+  <p>
+    source.sideShow: {layoutSource.sideShow}; source.sideWidth = {layoutSource.sideWidth}
+  </p>
 </div>
+
+<button
+  class="mt-20"
+  onclick={() => {
+    layoutSource.sideWidth = 400;
+  }}
+  >set width
+</button>
+
+<button
+  class="mt-20"
+  onclick={() => {
+    layoutSource.sideWidth = 300;
+    layoutSource.sideShow = true;
+  }}
+  >set width 2
+</button>
+
+<button
+  class="mt-20"
+  onclick={() => {
+    layoutSource.sideShow = false;
+  }}
+  >set width close
+</button>
 
 <div class="relative w-fit">
   <div
     class="mt-40 ml-40 box-border h-80 overflow-hidden border-r-10 border-gray-200 bg-red-500 py-2"
-    style:width="{sideWidthRaw}px"
+    style:width="{layout.sideWidthRaw}px"
     style:transition={!resizingSide ? `width ${TRANSITION_MS}ms linear` : ""}
     ontransitionend={(ev) => {
       if (ev.target !== ev.currentTarget) return;
@@ -170,14 +220,14 @@
       endTransitionState();
     }}
   >
-    {#if sideWidth != null && sideWidthContent != null}
-      <div class="h-full bg-amber-400" style:width="{sideWidthContent}px">
+    {#if !sideDerender}
+      <div class="h-full bg-amber-400" style:width="{layout.sideWidthContent}px">
         !resizingSide && "transition-transform duration-200 ease-linear", !resizingSide &&
         "transition-transform duration-200 ease-linear",
       </div>
     {/if}
   </div>
-  {#if sideWidth != null}
+  {#if layout.sideWidth != null}
     <div
       class="absolute inset-y-4 -right-1 w-2 cursor-col-resize bg-purple-500"
       {@attach sideControl}

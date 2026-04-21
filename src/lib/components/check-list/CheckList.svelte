@@ -1,16 +1,44 @@
 <script lang="ts" module>
-  import { useCheckListInserter, type Item, type ItemInsert } from "./CheckListInsert.svelte";
+  import {
+    useCheckListInserter,
+    type InsertInfo,
+    type Item,
+    type ItemInsert,
+    type TargetInfo,
+  } from "./CheckListInsert.svelte";
 
   export type CheckToFocus = Readonly<{
     index: number;
     moveTo?: { preferredX?: number; near: "top" | "bottom" };
   }>;
+
+  import {
+    useCreateCheck,
+    useDeleteCheck,
+    useMoveCheck,
+    useEditCheck,
+  } from "$lib/client/mutate-remote";
+
+  const useMutator = () => ({
+    createCheck: useCreateCheck(),
+    moveCheck: useMoveCheck(),
+    deleteCheck: useDeleteCheck(),
+    editCheck: useEditCheck(),
+  });
+  type Mutator = ReturnType<typeof useMutator>;
 </script>
 
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import { Input, newCheckItem, type CheckItem } from "$lib";
+  import Tickbox from "./Tickbox.svelte";
+  import DragList, { type DragPrep, type TargetPrep } from "../drag-insert-list/DragList.svelte";
+  import { createBulletHandler } from "./bulletHandler";
+  import type { Attachment } from "svelte/attachments";
+  import { type Insertable } from "../drag-insert-list/utils";
 
+  import { type ReadonlyDeep } from "$lib/utils/type-gymnastics";
+  import type { Insertion } from "../drag-insert-list/InsertPile.svelte";
   type Props = {
     class?: string;
     data: CheckItem[];
@@ -20,21 +48,16 @@
       ev: KeyboardEvent,
     ) => void;
     checkToFocus: CheckToFocus | null;
+    mut?: Mutator;
   };
 
-  let { data = $bindable(), onNavigateOut, checkToFocus, class: className }: Props = $props();
+  let { data, onNavigateOut, checkToFocus, class: className, mut = useMutator() }: Props = $props();
 
   let inputEl: Record<string, Input | undefined | null> = $state({});
 
-  import Tickbox from "./Tickbox.svelte";
-  import DragList, { type PrepareFn } from "../drag-insert-list/DragList.svelte";
-  import { createBulletHandler } from "./bulletHandler";
-  import type { Attachment } from "svelte/attachments";
-  import { type Insertable } from "../drag-insert-list/utils";
-
   const addBulletAt = (index: number, ...textsToAdd: string[]) => {
-    const checks = textsToAdd.map((text) => newCheckItem({ text }));
-    data.splice(index, 0, ...checks);
+    const checks = textsToAdd.map((text) => ({ text }));
+    mut.createCheck(checks, index);
   };
 
   export function getBulletInput(key: { index?: number; id?: string }): Input | undefined {
@@ -64,20 +87,18 @@
   const { handlePaste, handleKeyDown, handleNavigate } = createBulletHandler({
     getBulletInput,
     addBulletAt,
-    deleteBulletAt: (index) => data.splice(index, 1),
+    deleteBulletAt: (index) => mut.deleteCheck(data[index].id),
     getBullet: (index) => data[index] ?? undefined,
   });
 
   let selected: Record<string, boolean | undefined> = $state({});
 
-  const severList = (itemIds: Set<string>) => {
-    data = data.filter(({ id }) => !itemIds.has(id));
-  };
-
-  const insertList = (index: number, items: ItemInsert[], itemIds: Set<string>) => {
-    const rows = data.filter(({ id }) => !itemIds.has(id));
-    rows.splice(index, 0, ...items);
-    data = rows;
+  const onInsertTargeted = (
+    index: number,
+    insertion: Insertion<ItemInsert, InsertInfo>,
+  ): TargetPrep<TargetInfo> => {
+    const checkIds = insertion.items.map(({ id }) => id);
+    return { move: () => mut.moveCheck(checkIds, index), info: null };
   };
 
   const getBorderStyle = (
@@ -95,7 +116,7 @@
   const getDragHandle = (
     dataToRender: Item[],
     anchorId: string,
-    prepare: PrepareFn<ItemInsert>,
+    prepare: (dragPrep: DragPrep<ItemInsert, InsertInfo>) => void,
   ): Attachment<HTMLElement> => {
     const id = anchorId;
 
@@ -125,10 +146,9 @@
             }
           }
           const items = dataToRender.filter(({ id }) => idsToDrag.has(id));
-
           const mouseDown = { x: ev.clientX, y: ev.clientY };
           const condition = () => true;
-          prepare(items, id, mouseDown, condition);
+          prepare({ items, anchorId: id, mouseDown, condition, info: null });
         }
 
         node.focus();
@@ -170,10 +190,9 @@
   transitionRearrange="internal-guesture"
   phantomHeight="maximum"
   {getMarginTop}
-  {severList}
-  {insertList}
+  {onInsertTargeted}
   {onInsertActive}
-  bind:data
+  {data}
 >
   {#snippet phantom()}
     <div class="mr-0 h-full rounded-xs bg-gray-200"></div>
@@ -197,7 +216,13 @@
       ]}
     >
       <div class="flex size-7 shrink-0 items-center justify-center">
-        <Tickbox class="size-full shrink-0" bind:ticked={item.ticked}></Tickbox>
+        <Tickbox
+          class="size-full shrink-0"
+          bind:ticked={
+            () => item.ticked,
+            (v) => (v !== item.ticked ? mut.editCheck(item.id, { ticked: v }) : null)
+          }
+        ></Tickbox>
       </div>
 
       <Input
@@ -206,7 +231,9 @@
           item.ticked && "text-gray-400",
         ]}
         bind:this={inputEl[id]}
-        bind:value={item.text}
+        bind:value={
+          () => item.text, (v) => (v !== item.text ? mut.editCheck(item.id, { text: v }) : null)
+        }
         onNavigateOut={(...args) => {
           const handled = handleNavigate(index, total, ...args);
           if (!handled) onNavigateOut?.(...args);

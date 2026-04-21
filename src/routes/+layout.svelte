@@ -4,7 +4,7 @@
 </script>
 
 <svelte:head>
-  <title>Tons2do</title>
+  <title>Arranger</title>
   <link rel="icon" href="/favicon.png" />
 </svelte:head>
 

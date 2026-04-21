@@ -1,11 +1,11 @@
 <script module>
-  import { createContext } from "$lib/utils/context";
+  import { createContext } from "svelte";
   import Popup from "./Popup.svelte";
 
   type PopupArg = {
     anchor: HTMLElement;
-    getProjectShwon: () => ProjectItem;
-    setProjectShown: (proj: ProjectItem) => void;
+    getProjIdShown: () => string;
+    showProject: (projId: string) => void;
   };
 
   type Switcher = {
@@ -20,14 +20,17 @@
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { detectHoverOnce, type ProjectItem } from "$lib";
+  import { getAppState } from "$lib/client/context";
 
   type Props = {
     children: Snippet;
-    projects: ProjectItem[];
   };
 
-  let { children, projects = $bindable() }: Props = $props();
+  let { children }: Props = $props();
   let popup: Popup<PopupArg> | undefined;
+
+  const appState = getAppState();
+  let projects = $derived(appState.projects);
 
   setSwitcher({
     popup: (arg) => {
@@ -41,8 +44,8 @@
 {@render children()}
 
 <Popup bind:this={popup} alignY="bottom">
-  {#snippet content({ getProjectShwon, setProjectShown }: PopupArg)}
-    {@const listShownId = getProjectShwon().id}
+  {#snippet content({ getProjIdShown, showProject }: PopupArg)}
+    {@const listShownId = getProjIdShown()}
     <div
       class="max-h-120 w-90 overflow-hidden overflow-y-auto overscroll-contain rounded-md border border-gray-300 bg-[#f2f3f5] p-2 shadow-[0_8px_15px_rgba(0,0,0,0.1)]"
       {@attach detectHoverOnce("target-to-hover", (el) => el.classList.add("target-hovered"))}
@@ -54,7 +57,7 @@
             listShownId === proj.id && "not-in-[.target-hovered]:bg-pink-200",
           ]}
           onclick={() => {
-            setProjectShown(proj);
+            showProject(proj.id);
             popup?.close();
           }}
         >

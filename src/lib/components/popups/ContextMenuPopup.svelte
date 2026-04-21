@@ -1,5 +1,5 @@
 <script module>
-  import { createContext } from "$lib/utils/context";
+  import { createContext } from "svelte";
 
   export type PopupArg = {
     x: number;

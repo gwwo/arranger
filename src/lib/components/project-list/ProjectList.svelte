@@ -1,9 +1,15 @@
 <script lang="ts" module>
-  import type { ProjectItem } from "$lib/model";
+  import type { ProjectItem } from "$lib/client/model";
   import type { Attachment } from "svelte/attachments";
   import DormantInput from "../DormantInput.svelte";
-  import { type PrepareFn } from "../drag-insert-list/DragList.svelte";
-  import { useProjectListInserter, type ItemInsert, type Item } from "./ProjectListInsert.svelte";
+  import { type DragPrep, type TargetPrep } from "../drag-insert-list/DragList.svelte";
+  import {
+    useProjectListInserter,
+    type ItemInsert,
+    type Item,
+    type InsertInfo,
+    type TargetInfo,
+  } from "./ProjectListInsert.svelte";
   import {
     useTodoListInserter,
     isHeadItem,
@@ -13,6 +19,28 @@
   import { useContextMenu } from "$lib";
   import { type Insertable } from "../drag-insert-list/utils";
   import ReceiveList from "./ReceiveList.svelte";
+
+  import { type Insertion } from "../drag-insert-list/InsertPile.svelte";
+  import {
+    useDeleteProject,
+    useEditProject,
+    useMoveProject,
+    useMoveRow,
+  } from "$lib/client/mutate-remote";
+
+  const useMutator = () => {
+    const moveRow = useMoveRow.dynamic();
+    const editProj = useEditProject.dynamic();
+    return {
+      receiveRow: (fromProjId: string, rowIds: string[], toProjId: string) =>
+        moveRow({ projId: toProjId }, fromProjId, rowIds),
+      moveProject: useMoveProject(),
+      deleteProject: useDeleteProject(),
+      editProjectName: (projId: string, name: string) => editProj({ projId }, { name }),
+    };
+  };
+
+  type Mutator = ReturnType<typeof useMutator>;
 </script>
 
 <script lang="ts">
@@ -20,31 +48,34 @@
     class?: string;
     data: ProjectItem[];
     projIdShown: string | null;
-    projIdToReveal: string | null;
+    // projIdToReveal: string | null;
     showProject: (proj: ProjectItem) => void;
     selected?: Record<string, boolean | undefined>;
+    mut?: Mutator;
   };
 
   let {
-    data = $bindable(),
+    data,
     class: className,
     projIdShown,
-    projIdToReveal = $bindable(),
+    // projIdToReveal = $bindable(),
     showProject,
     selected = $bindable({}),
+    mut = useMutator(),
   }: Props = $props();
   const contextMenu = useContextMenu();
 
-  const severList = (itemIds: Set<string>) => {
-    data = data.filter(({ id }) => !itemIds.has(id));
-  };
-  const insertList = (index: number, items: ItemInsert[], itemIds: Set<string>) => {
-    const rows = data.filter(({ id }) => !itemIds.has(id));
-    rows.splice(index, 0, ...items.map((it) => it.raw));
-    data = rows;
-    items.forEach((it) => {
-      if (it.isSelected) selected[it.id] = true;
-    });
+  // const { receiveRows, moveProjects, deleteProjects } = useMutator();
+
+  const onInsertTargeted = (
+    index: number,
+    insertion: Insertion<ItemInsert, InsertInfo>,
+  ): TargetPrep<TargetInfo> => {
+    const projIds = insertion.items.map(({ id }) => id);
+    const move = () => {
+      mut.moveProject(projIds, index);
+    };
+    return { move, info: null };
   };
 
   const getBorderStyle = (
@@ -70,7 +101,7 @@
     dataToRender: Item[],
     anchor: Item,
     index: number,
-    prepare: PrepareFn<ItemInsert>,
+    prepare: (dragPrep: DragPrep<ItemInsert, InsertInfo>) => void,
   ): Attachment<HTMLElement> => {
     return (node) => {
       let pendingClick: (() => void) | null = null;
@@ -124,7 +155,7 @@
 
         const mouseDown = { x: ev.clientX, y: ev.clientY };
         const condition = (dx: number, dy: number) => Math.sqrt(dx ** 2 + dy ** 2) > 4;
-        prepare(items, anchor.id, mouseDown, condition);
+        prepare({ items, anchorId: anchor.id, mouseDown, condition, info: null });
 
         node.focus();
         ev.preventDefault();
@@ -156,14 +187,8 @@
     return { insertables, heights };
   }
 
-  const insertReceiveList = (item: ProjectItem, items: TodoItemInsert[]) => {
-    const rows: RowItem[] = items
-      .map((item) => item.raw)
-      .filter((item): item is RowItem => !isHeadItem(item));
-    if (rows.length === 0) return;
-    const insertIndex = item.rows.findIndex((item) => isGroupingItem(item));
-    const targetIndex = insertIndex === -1 ? item.rows.length : insertIndex;
-    item.rows.splice(targetIndex, 0, ...rows);
+  const receiveItems = (item: ProjectItem, fromListId: string, itemIdsToReceive: string[]) => {
+    mut.receiveRow(fromListId, itemIdsToReceive, item.id);
   };
 
   const openContextMenu = (ev: MouseEvent, item: ProjectItem) => {
@@ -190,14 +215,11 @@
       itemLabel: "project",
       onDelete: () => {
         const idsToDelete = new Set(ids);
-        data = data.filter(({ id }) => !idsToDelete.has(id));
-        Object.keys(selected).forEach((id) => {
-          if (idsToDelete.has(id)) delete selected[id];
+        mut.deleteProject(idsToDelete).then(() => {
+          Object.keys(selected).forEach((id) => {
+            if (idsToDelete.has(id)) delete selected[id];
+          });
         });
-        if (projIdShown != null && idsToDelete.has(projIdShown)) {
-          const next = data[0];
-          if (next) showProject(next);
-        }
       },
     });
   };
@@ -211,10 +233,9 @@
   transitionRearrange="internal-guesture"
   {getMarginTop}
   {onInsertActive}
-  {severList}
-  {insertList}
-  {insertReceiveList}
-  bind:data
+  {onInsertTargeted}
+  {receiveItems}
+  {data}
 >
   {#snippet phantom()}
     <div class="h-full rounded-md bg-teal-200"></div>
@@ -239,7 +260,9 @@
               : "",
         ]}
         placeholder={placeholder.project.name}
-        bind:value={item.name}
+        bind:value={
+          () => item.name, (v) => (v !== item.name ? mut.editProjectName(item.id, v) : null)
+        }
         {@attach getDragHandle(items, item, index, prepare)}
       ></DormantInput>
     </div>

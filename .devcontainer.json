@@ -1,5 +1,5 @@
 {
-  "name": "Tons2do",
+  "name": "Arranger",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/app",
@@ -10,7 +10,8 @@
         "oven.bun-vscode",
         "esbenp.prettier-vscode",
         "svelte.svelte-vscode",
-        "bradlc.vscode-tailwindcss"
+        "bradlc.vscode-tailwindcss",
+        "Anthropic.claude-code"
       ]
     }
   }

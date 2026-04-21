@@ -1,5 +1,6 @@
 <script lang="ts" module>
-  import { createInserterContext } from "$lib/components/drag-insert-list/InsertPile.svelte";
+  import { type Inserter } from "$lib/components/drag-insert-list/InsertPile.svelte";
+  import type { ReadonlyDeep } from "$lib/utils/type-gymnastics";
 
   import type { RowItem, GroupingItem, TodoItem } from "$lib";
 
@@ -7,12 +8,13 @@
 
   type HeadItem = { id: "head" };
   export const headItem: HeadItem = { id: "head" } as const;
-  export type Item = RowItem | HeadItem;
+  export type Item = ReadonlyDeep<RowItem> | ReadonlyDeep<HeadItem>;
 
-  export const isHeadItem = (item: Item): item is HeadItem => item.id === "head";
-  export const isGroupingItem = (item: Item): item is GroupingItem =>
-    !isHeadItem(item) && isG(item);
-  export const isTodoItem = (item: Item): item is TodoItem => !isHeadItem(item) && isT(item);
+  export const isHeadItem = (item: Item): item is ReadonlyDeep<HeadItem> => item.id === "head";
+  export const isGroupingItem = (item: Item): item is ReadonlyDeep<GroupingItem> =>
+    !isHeadItem(item) && "label" in item;
+  export const isTodoItem = (item: Item): item is ReadonlyDeep<TodoItem> =>
+    !isHeadItem(item) && "title" in item && "status" in item;
 
   export type ItemInsert = {
     raw: Item;
@@ -20,12 +22,17 @@
     isSelected?: boolean;
   };
 
-  type TargetInfo = {
+  export type InsertInfo = {
+    fromProjId: string;
+  };
+
+  export type TargetInfo = {
     pileWidth?: number;
     shrink?: boolean;
   };
 
-  const [useTodoListInserter, setInserter] = createInserterContext<ItemInsert, TargetInfo>();
+  const [useTodoListInserter, setInserter] =
+    createContext<Inserter<ItemInsert, InsertInfo, TargetInfo>>();
 
   export { useTodoListInserter };
 
@@ -34,7 +41,7 @@
 
 <script lang="ts">
   import InsertPile from "$lib/components/drag-insert-list/InsertPile.svelte";
-  import type { Snippet } from "svelte";
+  import { createContext, type Snippet } from "svelte";
   import DormantInput from "../DormantInput.svelte";
 
   type Props = { children: Snippet };
@@ -93,7 +100,7 @@
             value={raw.label}
           ></DormantInput>
         {:else if isTodoItem(raw)}
-          <TodoRow bind:todo={() => raw, (v) => {}} expanded={false}></TodoRow>
+          <TodoRow todo={raw} expanded={false} mut={null}></TodoRow>
         {/if}
       </div>
     </div>

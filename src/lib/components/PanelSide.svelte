@@ -1,3 +1,15 @@
+<script lang="ts" module>
+  import { useCreateProject } from "$lib/client/mutate-remote";
+  import { useSetOperationInPanel, useSetProjInPanel } from "$lib/client/mutate-local";
+
+  const useMutator = () => ({
+    createProject: useCreateProject(),
+    setProjInPanel: useSetProjInPanel(),
+    setOperationInPanel: useSetOperationInPanel(),
+  });
+  type Mutator = ReturnType<typeof useMutator>;
+</script>
+
 <script lang="ts">
   import type { ClassValue, HTMLAttributes } from "svelte/elements";
   import {
@@ -10,41 +22,43 @@
   } from "$lib";
   import ProjectList from "$lib/components/project-list/ProjectList.svelte";
   import OperationList from "./operation-list/OperationList.svelte";
-
+  import { getAppState } from "$lib/client/context";
   type Props = {
-    projects: ProjectItem[];
     instance: Instance;
     bottomBarHeight: number;
     topBarHeight: number;
     class?: ClassValue;
     newProjIdToReveal: string | null;
+    mut?: Mutator;
   };
 
   let {
-    projects = $bindable(),
-    instance = $bindable(),
+    instance,
     newProjIdToReveal = $bindable(),
     bottomBarHeight,
     topBarHeight,
     class: className,
+    mut = useMutator(),
   }: Props = $props();
 
-  let projSelected: Record<string, boolean | undefined> = $state(
+  let projsSelected: Record<string, boolean | undefined> = $state(
     isProjectInstance(instance) ? { [instance.project.id]: true } : {},
   );
 
-  const insertNew = (item: ProjectItem) => {
+
+  const appState = getAppState();
+  let projects = $derived(appState.projects)
+
+
+  const insertNew = async () => {
     let lastSelectedIndex = -1;
     for (const [i, proj] of projects.entries()) {
-      if (projSelected[proj.id]) lastSelectedIndex = i;
+      if (projsSelected[proj.id]) lastSelectedIndex = i;
     }
     const insertIndex = lastSelectedIndex >= 0 ? lastSelectedIndex + 1 : 0;
-    projects.splice(insertIndex, 0, item);
-    // using the proxied version to keep identity. necesarray?
-    instance = newProjectInstance({ project: projects[insertIndex] });
-    // projSelected[project.id] = true;
-    projSelected = { [item.id]: true };
-    newProjIdToReveal = item.id;
+    const { id } = await mut.createProject(insertIndex);
+    projsSelected = { [id]: true };
+    newProjIdToReveal = id;
   };
 </script>
 
@@ -56,19 +70,18 @@
     class="w-full flex-none px-2 pt-5 pb-4 text-sm"
     operationShown={isProjectInstance(instance) ? null : instance}
     showOperation={(op) => {
-      instance = op;
-      projSelected = {};
+      mut.setOperationInPanel(op);
+      projsSelected = {};
     }}
   ></OperationList>
 
   <ProjectList
     class="flex min-h-0 flex-1 px-2"
-    bind:data={projects}
-    bind:selected={projSelected}
+    data={projects}
+    bind:selected={projsSelected}
     projIdShown={isProjectInstance(instance) ? instance.project.id : null}
-    bind:projIdToReveal={newProjIdToReveal}
     showProject={(project) => {
-      instance = newProjectInstance({ project });
+      mut.setProjInPanel(project.id);
     }}
   ></ProjectList>
   <div
@@ -77,7 +90,7 @@
   >
     <button
       class="flex h-7 flex-none items-center justify-center rounded-full border border-transparent px-2 text-sm hover:border-gray-300 active:bg-gray-300/20"
-      onclick={() => insertNew(newProjectItem())}
+      onclick={insertNew}
     >
       + New List
     </button>

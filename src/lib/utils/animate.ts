@@ -5,10 +5,11 @@ export const splitFrom = (
   params: { peer?: HTMLElement | null; duration?: number },
 ) => {
   const { peer, duration = 400 } = params;
-  if (!peer) return {};
+  const resolvedPeer = peer ?? (node.previousElementSibling as HTMLElement | null);
+  if (!resolvedPeer) return {};
   const nodeEnter = node.getBoundingClientRect();
   node.style.display = "none";
-  const peerOriginal = peer.getBoundingClientRect();
+  const peerOriginal = resolvedPeer.getBoundingClientRect();
   node.style.display = "";
 
   const dx = peerOriginal.left - nodeEnter.left;

@@ -1,6 +1,5 @@
 <script lang="ts" module>
-  import type { PanelAppear } from "$lib";
-
+  import type { PanelLayout } from "$lib";
   const MIN_SIDE_WIDTH = 150;
   const MAX_SIDE_WIDTH = 600;
   const MIN_MAIN_WIDTH = 300;
@@ -26,18 +25,38 @@
   import { capAsymptotic } from "$lib/components/drag-insert-list/utils";
   import { untrack, type Snippet } from "svelte";
   import { useDragControl } from "$lib/utils/drag-control.svelte";
-  import { useNotifier } from "./ResizeGroup.svelte";
+  import { useNotifier } from "./PanelGroup.svelte";
+  import type { ReadonlyDeep } from "$lib/utils/type-gymnastics";
+  import { useUpdateLayout } from "$lib/client/mutate-local";
 
   type Props = {
     side?: Snippet<[topBarHeight: number, bottomBarHeight: number]>;
     main?: Snippet<[topBarHeight: number, bottomBarHeight: number]>;
     top?: Snippet<[resizingSide: boolean, sideReveal: number]>;
-    appear: PanelAppear;
+    layout: ReadonlyDeep<PanelLayout>;
   };
 
-  let { side, main, top, appear: ap = $bindable() }: Props = $props();
+  let { side, main, top, layout: layoutSource }: Props = $props();
+
+  const layout = $state(
+    untrack(() => {
+      const sideWidth = layoutSource.sideWidth === "disabled" ? 0 : layoutSource.sideWidth;
+      return {
+        sideWidthRaw: clamp(sideWidth, 0, MAX_SIDE_WIDTH),
+        sideWidthContent: clamp(sideWidth, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH),
+        ...layoutSource,
+      };
+    }),
+  );
+
+  $effect(() => {
+    const source = { ...layoutSource };
+    untrack(() => Object.assign(layout, source));
+  });
 
   const { notifyResizeStart, notifyResizeFinish } = useNotifier();
+
+  const updateLayout = useUpdateLayout();
 
   let panelTranslateX: number | null = $state(null);
   let panelTranslateY: number | null = $state(null);
@@ -45,71 +64,61 @@
   let resizingSide = $state(false);
   let resizingMain = $state(false);
   let resizing = $derived(resizingSide || resizingMain);
-  let resizingSpacer = $state(false);
-
-  // the side width at the first render
-  let sideWidthRaw = $state(clamp(ap.sideWidth ?? 0, 0, MAX_SIDE_WIDTH));
-  let sideContentWidth: number | null = $state(clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH));
+  let adjustingSpacer = $state(false);
 
   let sideTransition: symbol | null = $state(null);
-  let lastSideWidthRaw: number = sideWidthRaw;
 
+  let sideDerender = $derived(
+    // use `!resizingSide`, not `!resizing`
+    !resizingSide && sideTransition === null && layout.sideWidthRaw === 0,
+  );
+
+  let lastSideWidthRaw: number = layout.sideWidthRaw;
   $effect.pre(() => {
-    const w = sideWidthRaw;
+    const { sideWidthRaw } = layout;
     untrack(() => {
-      const next = clamp(w, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
-      if (resizing || sideContentWidth == null) {
-        sideContentWidth = next;
+      if (resizing || sideWidthRaw > lastSideWidthRaw) {
+        layout.sideWidthContent = clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
       }
-    });
-    untrack(() => {
       if (resizing) return;
-      if (lastSideWidthRaw === w) return;
+      if (lastSideWidthRaw === sideWidthRaw) return;
       // each sideTransition request is uniquely non-null
       sideTransition = Symbol();
     });
-    lastSideWidthRaw = w;
+    lastSideWidthRaw = sideWidthRaw;
   });
 
   const endTransitionState = () => {
-    if (!ap.sideShow) sideContentWidth = null;
     sideTransition = null; // setting sideTransition will clear the timer.
+    const { sideWidthRaw } = layout;
+    layout.sideWidthContent = clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
   };
 
   $effect.pre(() => {
     if (sideTransition == null) return;
-    let timer = untrack(() => setTimeout(endTransitionState, SIDE_TRANSITION_MS + 50));
+    let timer = setTimeout(endTransitionState, SIDE_TRANSITION_MS + 50);
     return () => clearTimeout(timer);
   });
 
   $effect.pre(() => {
-    ap.sideShow;
+    const { sideShow, sideWidth } = layout;
     untrack(() => {
-      if (ap.sideWidth != null) {
-        sideWidthRaw = ap.sideShow ? clamp(ap.sideWidth, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH) : 0;
-      }
+      layout.sideWidthRaw =
+        sideWidth != "disabled" && sideShow ? clamp(sideWidth, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH) : 0;
     });
-  });
-
-  $effect(() => {
-    if (!resizing) {
-      // whenever resizing finishes
-      untrack(() => {
-        ap.sideShow = sideWidthRaw > 0;
-        if (ap.sideShow && ap.sideWidth != null) ap.sideWidth = sideWidthRaw;
-        if (!ap.sideShow && sideTransition == null) sideContentWidth = null;
-      });
-    }
   });
 
   const sideControl = useDragControl({
     cursorStyle: "col-resize",
     onClick: () => {
-      ap.sideShow = !ap.sideShow;
+      const sideShow = !layout.sideShow;
+      layout.sideShow = sideShow;
+      updateLayout({ sideShow });
     },
     onStart: () => {
       notifyResizeStart();
       resizingSide = true;
+      const { sideWidthRaw } = layout;
       return { sideWidthRaw };
     },
     onMove: (dx, dy, start) => {
@@ -123,15 +132,21 @@
             ? capAsymptotic(overshoot)
             : -capAsymptotic(overshoot)
           : null;
-      sideWidthRaw = nextWidth;
+      layout.sideWidthRaw = nextWidth;
     },
     onFinish: () => {
       resizingSide = false;
       panelTranslateX = null;
+      const { sideWidthRaw, sideWidth } = layout;
       const endWidth =
         sideWidthRaw <= COLLAPSE_WIDTH ? 0 : clamp(sideWidthRaw, MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
       notifyResizeFinish({ dw: endWidth - sideWidthRaw });
-      sideWidthRaw = endWidth;
+      const sideShow = endWidth > 0;
+
+      layout.sideWidthRaw = endWidth;
+      layout.sideShow = sideShow;
+      if (sideShow && sideWidth !== "disabled") layout.sideWidth = endWidth;
+      updateLayout(sideShow ? { sideShow, sideWidth: endWidth } : { sideShow });
     },
   });
 
@@ -148,7 +163,7 @@
       const overshoot = excess - sideShrink;
 
       if (start.sideWidthRaw != null) {
-        sideWidthRaw = start.sideWidthRaw - sideShrink;
+        layout.sideWidthRaw = start.sideWidthRaw - sideShrink;
       }
       panelTranslateX =
         overshoot !== 0
@@ -156,7 +171,7 @@
             ? capAsymptotic(overshoot)
             : -capAsymptotic(overshoot)
           : null;
-      ap.mainWidth = nextMainWidth;
+      layout.mainWidth = nextMainWidth;
     };
     const resizeHeight = (dy: number, start: { height: number }) => {
       const freeHeight = start.height + dy;
@@ -168,23 +183,24 @@
             ? capAsymptotic(overshoot)
             : -capAsymptotic(overshoot)
           : null;
-      ap.height = nextHeight;
+      layout.height = nextHeight;
     };
 
+    const dir = direction;
+
     return useDragControl({
-      cursorStyle: direction,
+      cursorStyle: dir,
       onStart: () => {
         notifyResizeStart();
         resizingMain = true;
-        const { height, mainWidth, sideWidth } = ap;
-        // we directly manage mainWidth, but use sideWidthRaw to affect sideWidth when sideWidth != null
-        return { height, mainWidth, sideWidthRaw: sideWidth == null ? null : sideWidthRaw };
+        const { height, mainWidth, sideWidth, sideWidthRaw } = layout;
+        return { height, mainWidth, sideWidthRaw: sideWidth === "disabled" ? null : sideWidthRaw };
       },
       onMove: (dx, dy, start) => {
-        if (direction === "ew-resize" || direction === "nwse-resize") {
+        if (dir === "ew-resize" || dir === "nwse-resize") {
           if (dx !== 0) resizeWidth(dx, start);
         }
-        if (direction === "ns-resize" || direction === "nwse-resize") {
+        if (dir === "ns-resize" || dir === "nwse-resize") {
           if (dy !== 0) resizeHeight(dy, start);
         }
       },
@@ -193,6 +209,22 @@
         panelTranslateX = null;
         panelTranslateY = null;
         notifyResizeFinish();
+
+        const updates: { mainWidth?: number; sideWidth?: number; height?: number } = {};
+        if (dir === "ew-resize" || dir === "nwse-resize") {
+          const { mainWidth, sideWidth, sideWidthRaw } = layout;
+          if (sideWidthRaw > 0 && sideWidth !== "disabled") layout.sideWidth = sideWidthRaw;
+          layout.mainWidth = mainWidth;
+
+          updates.mainWidth = mainWidth;
+          if (sideWidthRaw > 0) updates.sideWidth = sideWidthRaw;
+        }
+        if (dir === "ns-resize" || dir === "nwse-resize") {
+          const { height } = layout;
+
+          updates.height = height;
+        }
+        updateLayout(updates);
       },
     });
   }
@@ -201,12 +233,13 @@
     cursorStyle: "ew-resize",
     onStart: () => {
       notifyResizeStart();
-      resizingSpacer = true;
-      return { spacerLeft: ap.spacerLeft };
+      adjustingSpacer = true;
+      const { spacerLeft } = layout;
+      return { spacerLeft };
     },
     onMove: (dx, dy, start) => {
       if (dx === 0) return;
-      if (start.spacerLeft == null) return;
+      if (start.spacerLeft === "disabled") return;
       const free = start.spacerLeft + dx;
       const next = clamp(free, MIN_MARGIN_LEFT, MAX_MARGIN_LEFT);
       const overshoot = Math.abs(free - next);
@@ -217,12 +250,14 @@
             ? capAsymptotic(overshoot)
             : -capAsymptotic(overshoot)
           : null;
-      ap.spacerLeft = next;
+      layout.spacerLeft = next;
     },
     onFinish: () => {
-      resizingSpacer = false;
+      adjustingSpacer = false;
       panelTranslateX = null;
       notifyResizeFinish();
+      const { spacerLeft } = layout;
+      if (spacerLeft !== "disabled") updateLayout({ spacerLeft });
     },
   });
 </script>
@@ -232,9 +267,9 @@
     "relative size-fit",
     // will need this when margin-left changes due to reordering,
     // which is not a concern in  the current case
-    !resizingSpacer && "transition-[margin] duration-200 ease-linear",
+    !adjustingSpacer && "transition-[margin] duration-200 ease-linear",
   ]}
-  style:margin-left="{ap.spacerLeft ?? 0}px"
+  style:margin-left="{layout.spacerLeft ?? 0}px"
 >
   <div
     class={[
@@ -242,7 +277,7 @@
       !resizing && "transition-transform duration-200 ease-linear",
       resizing && "select-none",
     ]}
-    style:height="{ap.height}px"
+    style:height="{layout.height}px"
     style:transform="translate({panelTranslateX ?? 0}px, {panelTranslateY ?? 0}px)"
   >
     {#if top != null}
@@ -252,13 +287,13 @@
       >
         {@render top(
           resizingSide,
-          ap.sideWidth == null ? 0 : clamp(sideWidthRaw / MIN_SIDE_WIDTH, 0, 1),
+          layout.sideWidth == null ? 0 : clamp(layout.sideWidthRaw / MIN_SIDE_WIDTH, 0, 1),
         )}
       </div>
     {/if}
     <div
       class={["relative box-border h-full flex-none overflow-hidden"]}
-      style:width="{sideWidthRaw}px"
+      style:width="{layout.sideWidthRaw}px"
       style:transition={!resizing ? `width ${SIDE_TRANSITION_MS}ms ease` : ""}
       ontransitionend={(ev) => {
         if (ev.target !== ev.currentTarget) return;
@@ -266,21 +301,21 @@
         endTransitionState();
       }}
     >
-      {#if ap.sideWidth != null && sideContentWidth != null}
-        <div class="h-full" style:width="{sideContentWidth}px">
+      {#if !sideDerender}
+        <div class="h-full" style:width="{layout.sideWidthContent}px">
           {@render side?.(topBarHeight, bottomBarHeight)}
         </div>
       {/if}
       <div class="absolute inset-y-0 right-0 z-10 w-px bg-gray-200"></div>
     </div>
 
-    <div class="relative flex h-full flex-none" style:width="{ap.mainWidth}px">
+    <div class="relative flex h-full flex-none" style:width="{layout.mainWidth}px">
       {@render main?.(topBarHeight, bottomBarHeight)}
       <!-- `overflow-hidden` here is important for avoiding Safari's quirks on transform with a overlay-->
       <!-- if you absolutely position this side pane slider at the left, in safari,
      it will cause a shift on the previously inserted row when inserting a new row abvove it from another list-->
 
-      {#if ap.sideWidth != null}
+      {#if layout.sideWidth !== "disabled"}
         <div
           class="group absolute inset-y-0 left-0 z-2 flex h-full w-4 items-center overflow-hidden"
         >
@@ -299,7 +334,7 @@
       {/if}
     </div>
   </div>
-  {#if ap.spacerLeft != null}
+  {#if layout.spacerLeft !== "disabled"}
     <div
       {@attach spacerControl}
       class="absolute inset-y-[14px] -left-[5px] w-[8px] cursor-ew-resize"

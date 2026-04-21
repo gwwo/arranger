@@ -28,14 +28,17 @@
 
   let current = $state(value);
 
-  $effect.pre(() => {
-    if (disabled && untrack(() => value !== current)) {
-      tick().then(() => (value = current));
-      // update after tick, so it wouldn't mess up other input's detecting `value!== current`
-    }
-  });
+  // The following is redundant: when disabled becomes true, the editable div is unmounted,
+  // which fires blur on the focused element, and the onblur handler already syncs value ← current.
+  // // if disabled while an updateOnBlur flush is still pending, sync value back to current
+  // $effect.pre(() => {
+  //   if (disabled && untrack(() => value !== current)) {
+  //     tick().then(() => (value = current));
+  //     // defer to avoid interfering with other inputs checking value !== current in the same flush
+  //   }
+  // });
 
-  let element: HTMLDivElement | undefined | null = $state.raw();
+  let element: HTMLDivElement | null = $state.raw(null);
 
   const isRangeWithinElement = (range: Range) => {
     if (element == null) return false;
@@ -172,7 +175,13 @@
     tabindex="0"
     contenteditable="false"
     {...restProps}
-    bind:innerText={() => value, (v) => {}}
+    bind:innerText={
+      () => {
+        current = value;
+        return value;
+      },
+      (v) => {}
+    }
     {placeholder}
     class={[
       "relative focus:outline-none",

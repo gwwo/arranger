@@ -2,32 +2,36 @@
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { Insertable, InsertPreview, IntroTransition } from "./utils";
-  import type { Inserter, Insertion } from "./InsertPile.svelte";
-
+  import type { Inserter, Insertion, Target } from "./InsertPile.svelte";
+  import { type ReadonlyDeep } from "$lib/utils/type-gymnastics";
   type InsertOption = {
     index: number;
     insertTop: number;
     blockMoveDown: number;
     borderNext?: number;
   };
-  export type PrepareFn<T> = (
-    items: T[],
-    anchorId: string,
+
+  export type DragPrep<ItemInsert, InsertInfo> = {
+    items: ItemInsert[];
+    anchorId: string;
     mouseDown: {
       x: number;
       y: number;
-    },
-    condition: (dx: number, dy: number) => boolean,
-  ) => void;
+    };
+    condition: (dx: number, dy: number) => boolean;
+    info: InsertInfo;
+  };
 
-  export type Props<Item, ItemInsert> = {
+  export type TargetPrep<TargetInfo> = Omit<Target<TargetInfo>, "toComponentId">;
+
+  export type Props<Item, ItemInsert, InsertInfo, TargetInfo> = {
     data: Item[];
     row: Snippet<
       [
         items: Item[],
         item: Item,
         index: number,
-        prepare: PrepareFn<ItemInsert>,
+        prepare: (dragPrep: DragPrep<ItemInsert, InsertInfo>) => void,
         phantomIndex: number | undefined,
       ]
     >;
@@ -37,20 +41,26 @@
       toRender: Item[],
       toDerender: Item[],
     ) => { insertables: Insertable[]; heights?: Map<string, number> };
+    onInsertTargeted: (
+      index: number,
+      insertion: Insertion<ItemInsert, InsertInfo>,
+      node: HTMLDivElement,
+    ) => TargetPrep<TargetInfo>;
     getMarginTop: (pre: Item | null, cur: Item | null) => number;
     transitionMarginTop?: boolean;
     noDragOut?: boolean;
     allowInsert: "all" | "self";
     transitionRearrange: "data-change" | "internal-guesture";
     class?: string | (string | false | undefined)[];
-    useInserter: () => Inserter<ItemInsert, { pileWidth: number }>;
-    severList: (itemIds: Set<string>) => void;
-    insertList: (index: number, items: ItemInsert[], itemIds: Set<string>) => void;
+    useInserter: () => Inserter<ItemInsert, InsertInfo, TargetInfo>;
     phantomHeight?: "first" | "maximum";
   } & SvelteHTMLElements["div"];
 </script>
 
-<script lang="ts" generics="Item extends {id: string}, ItemInsert extends {id: string}">
+<script
+  lang="ts"
+  generics="Item extends {id: string}, ItemInsert extends {id: string}, InsertInfo, TargetInfo"
+>
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { fade, fly, scale, slide } from "svelte/transition";
   import { useInsertListYProvider } from "./utils.svelte";
@@ -59,9 +69,10 @@
   import { getLayoutRect } from "$lib/utils/dom";
   import type { SvelteHTMLElements } from "svelte/elements";
   import { derived } from "svelte/store";
+  import type { InsertInfo } from "../check-list/CheckListInsert.svelte";
 
   let {
-    data = $bindable(),
+    data,
     noDragOut = false,
     transitionMarginTop = false,
     allowInsert,
@@ -72,11 +83,10 @@
     phantom,
     class: panelClass,
     useInserter,
-    severList,
-    insertList,
+    onInsertTargeted,
     phantomHeight = "first",
     ...restProps
-  }: Props<Item, ItemInsert> = $props();
+  }: Props<Item, ItemInsert, InsertInfo, TargetInfo> = $props();
   const componentID = $props.id();
 
   const elements: { [key: string]: HTMLElement | undefined | null } = {};
@@ -144,7 +154,7 @@
   }
 
   let panel: HTMLDivElement | undefined = $state.raw();
-  let content: HTMLDivElement;
+  let contentEl: HTMLDivElement | null = $state.raw(null);
 
   let panelLayoutRect: DOMRect | undefined = $state.raw();
 
@@ -206,19 +216,15 @@
     return itemsToDrag.filter((_, idx) => keep.has(idx));
   };
 
-  function prepareToDrag(
-    items: ItemInsert[],
-    anchorId: string,
-    mouseDown: { x: number; y: number },
-    condition: (dx: number, dy: number) => boolean,
-  ) {
+  function prepare(dragPrep: DragPrep<ItemInsert, InsertInfo>) {
+    const { items, anchorId, mouseDown, condition, info } = dragPrep;
     const anchorEl = elements[anchorId];
     if (anchorEl == null) return;
     const { left, top, width } = anchorEl.getBoundingClientRect();
 
     const itemsToDrag = items;
 
-    const initiate = (): Insertion<ItemInsert> | undefined => {
+    const initiate = (): Insertion<ItemInsert, InsertInfo> | undefined => {
       const mouseDownOffset = {
         x: mouseDown.x - left,
         y: mouseDown.y - top,
@@ -249,9 +255,9 @@
         itemIds,
         itemsToRender,
         pile: { width, height, mouseDownOffset },
-        sever: () => severList(itemIds),
         fromComponentId: componentID,
         getComfine: noDragOut ? (setComfine(), getComfine) : undefined,
+        info,
       };
     };
 
@@ -358,16 +364,6 @@
     return getMarginTop(pre, null) + (phantomInsert?.blockMoveDown ?? 0);
   });
 
-  let contentWidth: number | undefined;
-  let insertHere = $derived(phantomInsert != undefined);
-  // using $derived cannot seem to limit the calling frequency
-  // e.g. when using `phantomInsert != undefined` in $derived, it fires at every Y change
-  $effect.pre(() => {
-    if (insertHere) {
-      contentWidth = content.getBoundingClientRect().width;
-    }
-  });
-
   $effect.pre(() => {
     if (insertion == undefined) return;
     // setTarget when phantomInsert changes
@@ -377,11 +373,13 @@
       }
       return;
     }
-    const { index } = phantomInsert;
-    const { items, itemIds } = insertion;
-    const insert = () => insertList(index, items, itemIds);
-    const pileWidth = contentWidth ?? content.getBoundingClientRect().width;
-    setTarget({ toComponentId: componentID, insert, pileWidth });
+    if (contentEl == null) return;
+    const prep = onInsertTargeted(phantomInsert.index, insertion, contentEl);
+
+    setTarget({
+      toComponentId: componentID,
+      ...prep,
+    });
   });
 </script>
 
@@ -395,7 +393,7 @@
   style:padding-bottom="0"
 >
   <!-- use flex to make the margin-top not cascading -->
-  <div bind:this={content} class="relative flex h-fit w-full flex-col">
+  <div bind:this={contentEl} class="relative flex h-fit w-full flex-col">
     {#if phantomInsert != undefined && insertion != undefined}
       <!-- using transition:scale={{ duration: 200, start: 0.5 }} 
      will mess up translateY transition in safari; so go back to transition style:top -->
@@ -432,7 +430,7 @@
         style:margin-top="{marginTop}px"
         style:transform="translateY({translateY}px)"
       >
-        {@render row(dataToRender, item, index, prepareToDrag, phantomInsert?.index)}
+        {@render row(dataToRender, item, index, prepare, phantomInsert?.index)}
       </div>
     {/each}
     <div class="w-full" style:height="{bottomSpacerH}px"></div>

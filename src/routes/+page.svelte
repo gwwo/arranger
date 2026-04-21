@@ -6,20 +6,25 @@
     SwitcherPopup,
     type ProjectItem,
     type PanelItem,
-    mockProjects,
-    mockPanels,
   } from "$lib";
   import CheckListInsert from "$lib/components/check-list/CheckListInsert.svelte";
   import TodoListInsert from "$lib/components/todo-panel/TodoListInsert.svelte";
   import { onMount, tick, untrack } from "svelte";
 
-  let projects: ProjectItem[] = $state(mockProjects);
-  let panels: PanelItem[] = $state(mockPanels(untrack(() => projects)));
-
   import ProjectListInsert from "$lib/components/project-list/ProjectListInsert.svelte";
-  import ResizeGroup from "$lib/components/ResizeGroup.svelte";
+  import PanelGroup from "$lib/components/PanelGroup.svelte";
   import Panel from "./Panel.svelte";
+  import SideSliderDemo from "./side/SideSliderDemo.svelte";
+  import { mockPanels, mockProjects } from "$lib/client/mock";
+  import { setAppStateContext } from "$lib/client/context";
 
+  const projects: ProjectItem[] = $state(mockProjects);
+  const appState = $state({
+    projects,
+    panels: mockPanels(untrack(() => projects)),
+  });
+  setAppStateContext(appState);
+  
   onMount(() => {
     // this to suppress Safari's `scroll to navigate back` behavoir
     const hijack = (ev: WheelEvent) => {};
@@ -28,23 +33,19 @@
   });
 </script>
 
+<!-- <SideSliderDemo ></SideSliderDemo> -->
+
 <ContextMenuPopup>
-  <SwitcherPopup {projects}>
+  <SwitcherPopup>
     <PickerPopup>
       <ProjectListInsert>
         <TodoListInsert>
           <CheckListInsert>
-            <ResizeGroup items={panels}>
+            <PanelGroup>
               {#snippet each(panel, index)}
-                <Panel
-                  bind:projects
-                  bind:panels
-                  bind:instance={panel.instance}
-                  bind:appear={panel.appear}
-                  {index}
-                />
+                <Panel {panel} isHomePanel={index === 0} />
               {/snippet}
-            </ResizeGroup>
+            </PanelGroup>
           </CheckListInsert>
         </TodoListInsert>
       </ProjectListInsert>

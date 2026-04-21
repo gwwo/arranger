@@ -2,38 +2,32 @@
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { Inserter } from "../drag-insert-list/InsertPile.svelte";
-  import type { PrepareFn, Props as TProps } from "../drag-insert-list/DragList.svelte";
+  import type { DragPrep, Props as TProps } from "../drag-insert-list/DragList.svelte";
 </script>
 
 <script
   lang="ts"
-  generics="Item extends {id: string}, ItemInsert extends {id: string}, ReceiveItem extends {id: string}"
+  generics="Item extends {id: string}, ItemInsert extends {id: string}, ReceiveItem extends {id: string}, InsertInfo, TargetInfo"
 >
   import DragList from "../drag-insert-list/DragList.svelte";
 
-  type Props = Omit<TProps<Item, ItemInsert>, "row"> & {
+  type Props = Omit<TProps<Item, ItemInsert, InsertInfo, TargetInfo>, "row"> & {
     row: Snippet<
       [
         items: Item[],
         item: Item,
         index: number,
-        prepare: PrepareFn<ItemInsert>,
+        prepare: (dragPrep: DragPrep<ItemInsert, InsertInfo>) => void,
         phantomIndex: number | undefined,
         receiveListener: Attachment<HTMLElement>,
         isToReceive: boolean,
       ]
     >;
-    useReceiveInserter: () => Inserter<ReceiveItem, { shrink: true }>;
-    insertReceiveList: (target: Item, items: ReceiveItem[], itemIds: Set<string>) => void;
+    useReceiveInserter: () => Inserter<ReceiveItem, { fromProjId: string }, { shrink: true }>;
+    receiveItems: (target: Item, fromListId: string, itemIdsToReceive: string[]) => void;
   };
 
-  let {
-    data = $bindable(),
-    useReceiveInserter,
-    insertReceiveList,
-    row: rowEnhance,
-    ...props
-  }: Props = $props();
+  let { data, useReceiveInserter, receiveItems, row: rowEnhance, ...props }: Props = $props();
 
   const componentID = $props.id();
   const { getInsertion, setTarget, getTarget } = useReceiveInserter();
@@ -70,17 +64,21 @@
       return;
     }
 
-    const { items: recItems, itemIds: recItemIds } = insertion;
-    const insert = () => insertReceiveList(item, recItems, recItemIds);
+    const {
+      items,
+      info: { fromProjId },
+    } = insertion;
+    const receiveIds = items.map(({ id }) => id);
+    const move = () => receiveItems(item, fromProjId, receiveIds);
     setTarget?.({
       toComponentId: componentID,
-      insert,
-      shrink: true,
+      move,
+      info: { shrink: true },
     });
   });
 </script>
 
-<DragList bind:data {...props}>
+<DragList {data} {...props}>
   {#snippet row(items, item, index, prepare, phantomIndex)}
     {@render rowEnhance(
       items,

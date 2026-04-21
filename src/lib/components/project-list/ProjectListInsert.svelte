@@ -1,6 +1,9 @@
 <script lang="ts" module>
-  import { createInserterContext } from "$lib/components/drag-insert-list/InsertPile.svelte";
-  import { placeholder, type ProjectItem } from "$lib/model";
+  import {
+    createInserterContext,
+    type Inserter,
+  } from "$lib/components/drag-insert-list/InsertPile.svelte";
+  import { placeholder, type ProjectItem } from "$lib/client/model";
 
   export type Item = ProjectItem;
 
@@ -11,13 +14,17 @@
     isShown?: boolean;
   };
 
-  const [useProjectListInserter, setInserter] = createInserterContext<ItemInsert, {}>();
+  export type InsertInfo = null;
+  export type TargetInfo = null;
+
+  const [useProjectListInserter, setInserter] =
+    createContext<Inserter<ItemInsert, InsertInfo, InsertInfo>>();
   export { useProjectListInserter };
 </script>
 
 <script lang="ts">
   import InsertPile from "$lib/components/drag-insert-list/InsertPile.svelte";
-  import type { Snippet } from "svelte";
+  import { createContext, type Snippet } from "svelte";
   import DormantInput from "../DormantInput.svelte";
 
   type Props = { children: Snippet };

@@ -5,21 +5,21 @@
     buttonClass?: string;
   }[] = [
     {
-      value: "clutter",
-      iconClass: "icon-[heroicons--inbox-solid] text-cyan-600",
+      value: "inbox",
+      iconClass: "icon-[streamline-plump--inbox-content-remix] scale-90 text-gray-600",
     },
     {
-      value: "timeline",
-      iconClass: "icon-[mdi--timeline-clock] text-lime-600",
-      buttonClass: "mt-4",
+      value: "planned",
+      iconClass: "icon-[mdi--planner] text-red-600",
     },
     {
       value: "search",
-      iconClass: "icon-[ic--twotone-manage-search] scale-110 text-purple-600",
+      iconClass: "icon-[mingcute--search-fill] scale-110 text-purple-600",
+      buttonClass: "mt-4",
     },
     {
       value: "archive",
-      iconClass: "icon-[mynaui--book-check-solid] text-yellow-600",
+      iconClass: "icon-[f7--archivebox-fill] scale-90 text-cyan-600",
     },
     {
       value: "trash",
@@ -29,7 +29,7 @@
 </script>
 
 <script lang="ts">
-  import type { OperationInstance } from "$lib/model";
+  import type { OperationInstance } from "$lib/client/model";
   import type { ClassValue, HTMLAttributes } from "svelte/elements";
 
   type Props = {

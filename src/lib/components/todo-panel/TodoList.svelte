@@ -6,8 +6,38 @@
     isHeadItem,
     type Item,
     type ItemInsert,
+    type InsertInfo,
     headItem,
+    type TargetInfo,
   } from "./TodoListInsert.svelte";
+  import {
+    useSetRowSelected,
+    useSelectRow,
+    useUnselectRow,
+    useSetTodoExpanded,
+    useUnexpandTodo,
+  } from "$lib/client/mutate-local";
+  import {
+    useMoveRow,
+    useDeleteRow,
+    useMarkTodo,
+    useEditProject,
+    useEditGrouping,
+  } from "$lib/client/mutate-remote";
+
+  const useMutator = () => ({
+    setRowSelected: useSetRowSelected(),
+    selectRow: useSelectRow(),
+    unselectRow: useUnselectRow(),
+    setTodoExpanded: useSetTodoExpanded(),
+    unexpandTodo: useUnexpandTodo(),
+    moveRow: useMoveRow(),
+    deleteRow: useDeleteRow(),
+    markTodo: useMarkTodo(),
+    editProj: useEditProject(),
+    editGrouping: useEditGrouping(),
+  });
+  type Mutator = ReturnType<typeof useMutator>;
 </script>
 
 <script lang="ts">
@@ -16,29 +46,34 @@
   import { type Attachment } from "svelte/attachments";
 
   import { type RowItem, usePickerScrollCanceller, toLayoutPoint } from "$lib";
-  import DragList, { type PrepareFn } from "../drag-insert-list/DragList.svelte";
+  import DragList, { type DragPrep, type TargetPrep } from "../drag-insert-list/DragList.svelte";
   import DormantInput from "../DormantInput.svelte";
   import { useContextMenu } from "$lib";
   import type { ClassValue } from "svelte/elements";
   import { type Insertable } from "../drag-insert-list/utils";
   import { autoPrune } from "$lib/utils/reactive.svelte";
 
+  import type { ReadonlyDeep } from "$lib/utils/type-gymnastics";
+  import type { Insertion } from "../drag-insert-list/InsertPile.svelte";
+
   type Props = {
     class?: string;
     data: ProjectItem;
     noDragOut?: boolean;
-    expanded?: Record<string, boolean | undefined>;
-    selected?: Record<string, boolean | undefined>;
-    rowIdToReveal?: string | null;
+    expanded: ReadonlyDeep<Record<string, boolean | undefined>>;
+    selected: ReadonlyDeep<Record<string, boolean | undefined>>;
+    rowIdToReveal: string | null;
+    mut?: Mutator;
   };
 
   let {
     class: className,
-    data = $bindable(),
+    data,
     noDragOut,
-    expanded = $bindable({}),
-    selected = $bindable({}),
-    rowIdToReveal = $bindable(null),
+    expanded,
+    selected,
+    rowIdToReveal = $bindable(),
+    mut = useMutator(),
     ...restProps
   }: Props = $props();
 
@@ -46,15 +81,11 @@
 
   let collapsing: Record<string, boolean | undefined> = $state({});
 
-  // Think: if we don't clear selected and we only switch `instance.project`
-  // then we preserve selected state
   $effect(() => {
     const ids = new Set(data.rows.map(({ id }) => id));
     untrack(() => {
-      [expanded, collapsing, selected].forEach((record) => {
-        Object.keys(record).forEach((key) => {
-          if (!ids.has(key)) delete record[key];
-        });
+      Object.keys(collapsing).forEach((key) => {
+        if (!ids.has(key)) delete collapsing[key];
       });
     });
   });
@@ -75,7 +106,7 @@
 
   const getBorderStyle = (
     items: Item[],
-    item: RowItem,
+    item: ReadonlyDeep<RowItem>,
     index: number,
     phantomIndex: number | undefined,
   ): ClassValue => {
@@ -94,19 +125,24 @@
     ];
   };
 
-  const severList = (itemIds: Set<string>) => {
-    data.rows = data.rows.filter((row) => !itemIds.has(row.id));
-  };
-
-  const insertList = (index: number, items: ItemInsert[], itemIds: Set<string>) => {
-    const insertRaws = items.map((it) => it.raw).filter((it): it is RowItem => !isHeadItem(it));
-    const rows = data.rows.filter((row) => !itemIds.has(row.id));
-    rows.splice(index - 1, 0, ...insertRaws); // since we prepended a HeadItem
-    data.rows = rows;
-    selected = {};
-    items.forEach((it) => {
-      if (it.isSelected) selected[it.id] = true;
-    });
+  const onInsertTargeted = (
+    index: number,
+    insertion: Insertion<ItemInsert, InsertInfo>,
+    node: HTMLDivElement,
+  ): TargetPrep<TargetInfo> => {
+    const {
+      info: { fromProjId },
+      items,
+    } = insertion;
+    const move = () => {
+      // remember to use index - 1, since we prepended a HeadItem
+      const rowIds = items.map(({ id }) => id);
+      mut.moveRow(fromProjId, rowIds, index - 1);
+      const idsToSelect = new Set(items.flatMap(({ id, isSelected }) => (isSelected ? [id] : [])));
+      mut.setRowSelected(idsToSelect);
+    };
+    const pileWidth = node.getBoundingClientRect().width;
+    return { move, info: { pileWidth } };
   };
 
   let headRowEl: HTMLDivElement | null = $state(null);
@@ -126,7 +162,7 @@
     ev.preventDefault();
     ev.stopPropagation();
     if (!selected[id]) {
-      selected = { [id]: true };
+      mut.setRowSelected(id);
     }
     const ids = rows.flatMap((item) => (!isHeadItem(item) && selected[item.id] ? [item.id] : []));
     const todoItems = rows.flatMap((item) =>
@@ -166,18 +202,12 @@
           ? {
               label: actionLabel,
               onAction: () => {
-                const idsToMark = new Set(todoIds);
-                data.rows.forEach((row) => {
-                  if (isTodoItem(row) && idsToMark.has(row.id)) {
-                    row.status = allTodosDone ? "todo" : "complete";
-                  }
-                });
+                mut.markTodo(new Set(todoIds), allTodosDone ? "todo" : "complete");
               },
             }
           : undefined,
       onDelete: () => {
-        const idsToDelete = new Set(ids);
-        data.rows = data.rows.filter((row) => !idsToDelete.has(row.id));
+        mut.deleteRow(new Set(ids));
       },
     });
   };
@@ -252,7 +282,7 @@
   const getDragHandle = (
     dataToRender: Item[],
     anchorId: string,
-    prepare: PrepareFn<ItemInsert>,
+    prepare: (dragprep: DragPrep<ItemInsert, InsertInfo>) => void,
   ): Attachment<HTMLElement> => {
     const id = anchorId;
     return (node) => {
@@ -281,12 +311,12 @@
         const alreadySelected = selected[id];
         if (alreadySelected) {
           pendingClick = () => {
-            if (selectDuo) selected[id] = false;
-            else selected = { [id]: true };
+            if (selectDuo) mut.unselectRow(id);
+            else mut.setRowSelected(id);
           };
         } else {
-          if (selectDuo) selected[id] = true;
-          else selected = { [id]: true };
+          if (selectDuo) mut.selectRow(id);
+          else mut.setRowSelected(id);
           pendingClick = undefined;
         }
 
@@ -308,7 +338,7 @@
 
         const mouseDown = { x: ev.clientX, y: ev.clientY };
         const condition = (dx: number, dy: number) => Math.sqrt(dx ** 2 + dy ** 2) > 4;
-        prepare(items, id, mouseDown, condition);
+        prepare({ items, anchorId: id, mouseDown, condition, info: { fromProjId: data.id } });
 
         node.focus();
         ev.preventDefault();
@@ -328,7 +358,7 @@
       const clickedEl = ev.target as HTMLElement;
       const parentDraggable = clickedEl.closest(".movable");
       if (!parentDraggable || !node.contains(parentDraggable)) {
-        selected = {};
+        mut.setRowSelected(null);
       }
     };
     node.addEventListener("mousedown", handler);
@@ -336,7 +366,8 @@
   };
 
   function onInsertActive(items: ItemInsert[], toRender: Item[], toDerender: Item[]) {
-    toDerender.forEach(({ id }) => delete expanded[id]);
+    mut.unexpandTodo(toDerender.map(({ id }) => id));
+
     const hasGrouping = items.some((it) => isGroupingItem(it.raw));
     const len = toRender.length;
     const insertables: Insertable[] = [];
@@ -371,12 +402,11 @@
   transitionMarginTop
   allowInsert="all"
   transitionRearrange="data-change"
-  {severList}
-  {insertList}
+  {onInsertTargeted}
   {onInsertActive}
   {noDragOut}
   useInserter={useTodoListInserter}
-  bind:data={rows}
+  data={rows}
   {@attach usePickerScrollCanceller()}
   {@attach scrollIntoViewControl}
   {@attach selectedCleanup}
@@ -394,7 +424,7 @@
         <Input
           bind:this={nameInputEl}
           class="text-2xl font-semibold wrap-break-word"
-          bind:value={data.name}
+          bind:value={() => data.name, (v) => (v !== data.name ? mut.editProj({ name: v }) : null)}
           updateOnBlur
           placeholder={placeholder.project.name}
           onkeydown={(e) => {
@@ -406,7 +436,7 @@
         ></Input>
         <Input
           class="mt-4 min-h-12 text-base wrap-break-word"
-          bind:value={data.note}
+          bind:value={() => data.note, (v) => (v !== data.note ? mut.editProj({ note: v }) : null)}
           updateOnBlur
           placeholder={placeholder.project.note}
         ></Input>
@@ -427,7 +457,10 @@
             bind:this={groupingElements[id]}
             class="flex h-full w-full items-center px-4 font-semibold text-teal-600"
             placeholder={placeholder.grouping.label}
-            bind:value={item.label}
+            bind:value={
+              () => item.label,
+              (v) => (v !== item.label ? mut.editGrouping(item.id, { label: v }) : null)
+            }
             {@attach draghandle}
             oncontextmenu={(ev) => openContextMenu(ev, id)}
           ></DormantInput>
@@ -440,10 +473,9 @@
             style:top={`-${getMarginTop(items[index - 1], item)}px`}
             style:bottom={`-${getMarginTop(item, items[index + 1])}px`}
             onclick={() => {
-              expanded[id] = false;
-              rowIdToReveal = null;
+              mut.unexpandTodo(id);
               collapsing[id] = true;
-              selected = { [id]: true };
+              mut.setRowSelected(id);
             }}
           ></button>
         {/if}
@@ -467,26 +499,18 @@
             bind:this={todoRowElements[id]}
             {draghandle}
             oncontextmenu={(ev) => openContextMenu(ev, id)}
-            bind:todo={() => item, (v) => {}}
-            bind:expanded={
-              () => expanded[id] == true,
-              (v) => {
-                if (v) {
-                  Object.entries(expanded).forEach(([key, val]) => {
-                    if (val) {
-                      collapsing[key] = true;
-                    }
-                  });
-                  expanded = { [id]: true };
-                  rowIdToReveal = id;
-                  selected = { [id]: true };
-                } else {
-                  console.log("this being called");
-                  expanded[id] = false;
-                  rowIdToReveal = null;
+            todo={item}
+            expanded={expanded[id] == true}
+            ondblclick={() => {
+              Object.entries(expanded).forEach(([key, val]) => {
+                if (val) {
+                  collapsing[key] = true;
                 }
-              }
-            }
+              });
+              rowIdToReveal = id;
+              mut.setTodoExpanded(id);
+              mut.setRowSelected(id);
+            }}
           ></TodoRow>
         </div>
       {/if}

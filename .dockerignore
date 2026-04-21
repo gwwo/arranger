@@ -1,0 +1,12 @@
+node_modules
+.svelte-kit
+.vite
+dist
+build
+.git
+.gitignore
+Dockerfile
+docker-compose*.yml
+.env*
+.DS_Store
+.vscode

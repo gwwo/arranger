@@ -1,12 +1,12 @@
 <script module>
-  import { createContext } from "$lib/utils/context";
+  import { createContext } from "svelte";
   import Popup from "./Popup.svelte";
   import { type TodoItem, type RowItem, Calendar } from "$lib";
   import { getDayOfWeek, type CalendarDate } from "@internationalized/date";
 
   export type PopupArg = {
     anchor: HTMLElement;
-    getDate?: () => CalendarDate | undefined;
+    getDate?: () => CalendarDate | null;
     setDate?: (d: CalendarDate) => void;
     getInput: () => string;
   };
@@ -87,7 +87,7 @@
         <Calendar
           {cellSize}
           {gapWidth}
-          dateChosen={getDate?.()}
+          dateChosen={getDate?.() ?? undefined}
           onChoose={(date) => {
             setDate?.(date);
             popup?.close();

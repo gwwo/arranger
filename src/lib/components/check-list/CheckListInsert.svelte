@@ -7,7 +7,14 @@
 
   export type ItemInsert = CheckItem;
 
-  const [useCheckListInserter, setInserter] = createInserterContext<ItemInsert, {}>();
+  export type InsertInfo = null;
+  export type TargetInfo = null;
+
+  const [useCheckListInserter, setInserter] = createInserterContext<
+    ItemInsert,
+    InsertInfo,
+    TargetInfo
+  >();
 
   export { useCheckListInserter };
 </script>
@@ -16,6 +23,7 @@
   import InsertPile from "$lib/components/drag-insert-list/InsertPile.svelte";
   import type { Snippet } from "svelte";
   import Tickbox from "./Tickbox.svelte";
+  import type { ReadonlyDeep } from "$lib/utils/type-gymnastics";
 
   type Props = { children: Snippet };
   let { children }: Props = $props();

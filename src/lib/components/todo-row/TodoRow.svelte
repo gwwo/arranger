@@ -1,3 +1,10 @@
+<script lang="ts" module>
+  import { useEditTodo } from "$lib/client/mutate-remote";
+
+  const useMutator = () => ({ editTodo: useEditTodo() });
+  type Mutator = ReturnType<typeof useMutator>;
+</script>
+
 <script lang="ts">
   import { fade, slide } from "svelte/transition";
   import { Inputbar, Input, Statusbox, ViewSwitch, placeholder } from "$lib";
@@ -8,21 +15,29 @@
   import { type TodoItem } from "$lib";
 
   import ExpandedTodo from "./ExpandedTodo.svelte";
+  import { setTodoContext } from "$lib/client/context";
+  import type { ReadonlyDeep } from "$lib/utils/type-gymnastics";
 
   type Props = {
-    todo: TodoItem;
+    todo: ReadonlyDeep<TodoItem>;
     expanded: boolean;
     draghandle?: Attachment<HTMLElement>;
     class?: string;
+    mut?: Mutator | null;
   } & HTMLAttributes<HTMLDivElement>;
 
   let {
-    todo = $bindable(),
-    expanded: expandedRaw = $bindable(false),
+    todo,
+    expanded: expandedRaw,
     draghandle,
     class: className,
+    mut: mutator,
     ...restProps
   }: Props = $props();
+
+  setTodoContext({ rowId: todo.id });
+
+  const mut = mutator === undefined ? useMutator() : mutator;
 
   // expandedRaw will be invalidated at any `expanded = { [item.id]: true })`
   // which will triggers $effects in ViewSwitch
@@ -45,11 +60,14 @@
         "has-[.checkbox:active]:before:absolute has-[.checkbox:active]:before:inset-0 has-[.checkbox:active]:before:bg-black/5",
     ]}
   >
-    <Statusbox class="checkbox size-8 shrink-0 p-2" bind:status={todo.status}></Statusbox>
+    <Statusbox
+      class="checkbox size-8 shrink-0 p-2"
+      bind:status={() => todo.status, (v) => mut?.editTodo({ status: v })}
+    ></Statusbox>
     <div class="relative min-w-0 grow py-[4px] pr-[6px] pl-[2px]">
       <ViewSwitch bind:this={view} key={expanded}>
         {#if expanded}
-          <ExpandedTodo bind:this={expandedTodo} bind:todo></ExpandedTodo>
+          <ExpandedTodo bind:this={expandedTodo} {todo}></ExpandedTodo>
         {:else}
           <div class="flex">
             <Input
@@ -72,9 +90,6 @@
           class="absolute top-0 left-0 size-full focus:outline-none"
           role="button"
           tabindex="0"
-          ondblclick={() => {
-            expandedRaw = true;
-          }}
         ></div>
       {/if}
     </div>

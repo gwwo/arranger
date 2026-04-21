@@ -12,64 +12,47 @@
     placeholder,
     isProjectInstance,
     type ProjectInstance,
+    type Instance,
   } from "$lib";
+  import { useClonePanel, useClosePanel, useSetProjInPanel } from "$lib/client/mutate-local";
 
   type Props = {
-    index: number;
-    panels: PanelItem[];
+    isHomePanel: boolean;
+    instance: Instance;
     swicherOpacity: number;
     opacityTransition: boolean;
     disable?: boolean;
   };
 
   let {
-    index,
-    panels = $bindable(),
+    isHomePanel,
+    instance,
     swicherOpacity,
     disable = false,
     opacityTransition,
   }: Props = $props();
 
-  let panel = $derived(panels[index]);
-
   const switcher = useSwitcher();
 
-  const duplicate = async (project: ProjectItem) => {
-    const spacerLeft = panels.at(index + 1)?.appear.spacerLeft ?? undefined;
-
-    if (panels.length >= MAX_PANEL_COUNT) {
-      panels.splice(panels.length - 1, 1);
-    }
-    const { height, mainWidth } = panel.appear;
-    panels.splice(
-      index + 1,
-      0,
-      newPanelItem({
-        appear: { height, mainWidth, spacerLeft },
-        instance: { project },
-      }),
-    );
-  };
-
-  const close = () => {
-    panels.splice(index, 1);
-  };
+  const setProjInPanel = useSetProjInPanel();
+  const closePanel = useClosePanel();
+  const clonePanel = useClonePanel();
 
   const popup = (ev: MouseEvent & { currentTarget: EventTarget & HTMLElement }) => {
     if (disable) return;
-    if (!isProjectInstance(panel.instance)) return;
-    const { project } = panel.instance;
+    if (!isProjectInstance(instance)) return;
+    const { project } = instance;
     switcher.popup({
       anchor: ev.currentTarget,
-      getProjectShwon: () => project,
-      setProjectShown: (project) => (panels[index].instance = newProjectInstance({ project })),
+      getProjIdShown: () => project.id,
+      showProject: setProjInPanel,
     });
   };
 </script>
 
 <div class="flex h-full items-center gap-2 px-4 pt-1 text-gray-400">
   <div class="size-5 flex-none">
-    {#if index === 0}
+    {#if isHomePanel}
       <button
         onclick={() => {}}
         class="flex size-full items-center justify-center"
@@ -79,8 +62,8 @@
       </button>
     {:else}
       <button
-        onclick={close}
-        class="group flex size-full items-center justify-center rounded-md hover:border hover:border-gray-400 active:bg-gray-400/20"
+        onclick={closePanel}
+        class="group flex size-full items-center justify-center rounded-md hover:border hover:border-gray-400 active:bg-teal-400/20"
         aria-label="to close panel"
       >
         <!-- <span class="icon-[material-symbols--tab-close-outline]"></span> -->
@@ -90,7 +73,7 @@
   </div>
 
   <div class="flex flex-1 justify-center overflow-hidden">
-    {#if isProjectInstance(panel.instance)}
+    {#if isProjectInstance(instance)}
       <button
         style:opacity={swicherOpacity}
         class={[
@@ -101,22 +84,21 @@
         onclick={popup}
       >
         <span class="truncate leading-6">
-          {panel.instance.project.name || placeholder.project.name}
+          {instance.project.name || placeholder.project.name}
         </span>
         <span class="icon-[mi--select] shrink-0"></span>
       </button>
     {/if}
   </div>
   <div class="size-5 flex-none">
-    {#if index === 0 && isProjectInstance(panel.instance)}
-      {@const { project } = panel.instance}
+    {#if isHomePanel && isProjectInstance(instance)}
       <button
-        onclick={() => duplicate(project)}
+        onclick={clonePanel}
         class="group flex size-full items-center justify-center"
         aria-label="to duplicate list"
       >
         <span
-          class="icon-[mingcute--copy-2-line] group-hover:icon-[icon-park-solid--copy] size-4 group-active:bg-teal-500"
+          class="icon-[mingcute--copy-2-line] group-hover:icon-[icon-park-solid--copy] size-4 group-active:bg-teal-400"
         ></span>
       </button>
     {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { OperationInstance } from "$lib/model";
+  import type { OperationInstance } from "$lib/client/model";
   import { operations } from "./OperationList.svelte";
 
   type Props = {

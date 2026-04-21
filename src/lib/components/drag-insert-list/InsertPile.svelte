@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { createContext } from "$lib/utils/context";
+  import { createContext } from "svelte";
 
   type PileAppear = {
     width: number;
@@ -7,55 +7,60 @@
     mouseDownOffset: { x: number; y: number };
   };
 
-  export type Insertion<T> = Readonly<{
-    items: T[];
+  export type Insertion<TItem, TInfo> = Readonly<{
+    items: TItem[];
     itemIds: Set<string>;
-    itemsToRender: { item: T; offsetTop: number }[];
+    itemsToRender: { item: TItem; offsetTop: number }[];
     pile: PileAppear;
     getComfine?: () => DOMRect | undefined;
-    sever: () => void;
     fromComponentId: string;
+    info: TInfo;
   }>;
 
-  type Request<T> = Readonly<{
+  type Request<TItem, TInfo> = Readonly<{
     mouseDown: { x: number; y: number };
     condition: (dx: number, dy: number) => boolean;
-    initiate: () => Insertion<T> | undefined;
+    initiate: () => Insertion<TItem, TInfo> | undefined;
   }>;
 
-  type Target<T> = Readonly<
-    {
-      toComponentId: string;
-      insert?: () => void;
-    } & T
-  >;
+  export type Target<TInfo> = Readonly<{
+    toComponentId: string;
+    move: () => void;
+    info: TInfo;
+  }>;
 
-  export type Inserter<TItem, TInfo> = {
-    register: (req: Request<TItem>) => void;
-    getInsertion: () => Insertion<TItem> | undefined;
+  export type Inserter<TItem, TInsertInfo, TTargetInfo> = {
+    register: (req: Request<TItem, TInsertInfo>) => void;
+    getInsertion: () => Insertion<TItem, TInsertInfo> | undefined;
     getTarget: () => { toComponentId: string } | null;
-    setTarget: (t: Target<TInfo> | null) => void;
+    setTarget: (t: Target<TTargetInfo> | null) => void;
     receive: CrossfadeTransition;
     getPileComfinedOffsetTop: () => number | undefined;
   };
 
-  export function createInserterContext<TItem, TAppear>() {
-    return createContext<Inserter<TItem, TAppear>>();
+  export function createInserterContext<TItem, TInsertInfo, TTargetInfo>() {
+    return createContext<Inserter<TItem, TInsertInfo, TTargetInfo>>();
   }
 
   import { tick, untrack, type Snippet } from "svelte";
 </script>
 
-<script lang="ts" generics="ItemInsert extends {id: string}, TargetInfo">
+<script lang="ts" generics="ItemInsert extends {id: string}, InsertInfo, TargetInfo">
   import { fly } from "svelte/transition";
   import { clampSoft, crossfade, type CrossfadeTransition } from "./utils";
   import { isChromium, isSafari } from "$lib/utils/dom";
 
   type Props = {
     row: Snippet<
-      [item: ItemInsert, index: number, alive: boolean, pile: PileAppear, target: TargetInfo | null]
+      [
+        item: ItemInsert,
+        index: number,
+        alive: boolean,
+        pile: PileAppear,
+        targetInfo: TargetInfo | null,
+      ]
     >;
-    setInserter: (cxt: Inserter<ItemInsert, TargetInfo>) => void;
+    setInserter: (cxt: Inserter<ItemInsert, InsertInfo, TargetInfo>) => void;
     pileRenderOffset?: { x: number; y: number };
     children: Snippet;
   };
@@ -78,7 +83,7 @@
     };
   };
 
-  let insertion: Insertion<ItemInsert> | undefined = $state.raw();
+  let insertion: Insertion<ItemInsert, InsertInfo> | undefined = $state.raw();
 
   $effect(() => {
     const classesWhenDrag = ["cursor-default", "dragging-to-insert"];
@@ -90,7 +95,7 @@
     return () => root.classList.remove(...classesWhenDrag);
   });
 
-  let request: Request<ItemInsert> | undefined = $state.raw();
+  let request: Request<ItemInsert, InsertInfo> | undefined = $state.raw();
 
   let mouseMove:
     | { x: number; y: number; vv?: { offsetTop: number; offsetLeft: number } }
@@ -200,10 +205,7 @@
       await tick();
       request = undefined;
       if (insertion) {
-        if (target?.insert) {
-          insertion.sever();
-          target.insert();
-        }
+        target?.move();
         insertion = undefined;
       }
     };
@@ -261,7 +263,7 @@
         }}
         class="absolute h-fit w-full"
       >
-        {@render row(item, len - 1 - index, alive, pile, target)}
+        {@render row(item, len - 1 - index, alive, pile, target?.info ?? null)}
       </div>
     {/each}
   </div>

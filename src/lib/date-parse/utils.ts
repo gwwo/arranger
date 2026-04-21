@@ -106,7 +106,7 @@ export const parseDayCertain = (
   if (m == undefined) return;
   const [i] = getMatchedIndices(m);
   const [cand] = gather(m[i], patterns, i - 1);
-  return { index: m.indices![0], ...cand };
+  return { index: m.indices![0]!, ...cand };
 };
 
 export const parseDayOrMonth = (
@@ -114,7 +114,7 @@ export const parseDayOrMonth = (
 ): ({ v: number } & Labelable & SegmentInfo) | undefined => {
   const m = /\b(0?[1-9]|10|11|12)\b/d.exec(input);
   if (m == undefined) return;
-  return { index: m.indices![0], label: "0?1-12", v: parseInt(m[1], 10) };
+  return { index: m.indices![0]!, label: "0?1-12", v: parseInt(m[1], 10) };
 };
 
 export const parseYear = (input: string): ({ v: number } & Labelable & SegmentInfo) | undefined => {
@@ -122,7 +122,7 @@ export const parseYear = (input: string): ({ v: number } & Labelable & SegmentIn
 
   if (m == undefined) return;
 
-  return { index: m.indices![0], label: "20xx", v: parseInt(m[1], 10) };
+  return { index: m.indices![0]!, label: "20xx", v: parseInt(m[1], 10) };
 };
 export type Duration = "day" | "week" | "month" | "year";
 
@@ -172,7 +172,7 @@ export const parseMonthCertain = (
   if (m == undefined) return;
   const [i] = getMatchedIndices(m);
   const [month] = gather(m[i], patterns, i - 1);
-  return { index: m.indices![0], ...month };
+  return { index: m.indices![0]!, ...month };
 };
 
 export const parseMonthNamePartial = (
@@ -201,7 +201,7 @@ export const parseMonthNamePartial = (
   if (!m) return;
   const [i] = getMatchedIndices(m);
   const cands = gather(m[i], patterns, i - 1, true);
-  return { index: m.indices![0], cands };
+  return { index: m.indices![0]!, cands };
 };
 
 type Labelable = { label?: string };
@@ -490,7 +490,7 @@ function gatherABorB<A, B>(
   const { indices } = m;
   if (indices == undefined) return;
 
-  const index = indices[0];
+  const index = indices[0]!;
   const [i, j] = getMatchedIndices(m) as [number | undefined, number | undefined];
 
   if (i != undefined && j != undefined) {
@@ -498,13 +498,13 @@ function gatherABorB<A, B>(
     const [b] = gather(m[j], patternsB, j - 1 - patternsA.length);
     return {
       index,
-      a: { index: indices[i], ...a },
-      b: { index: indices[j], ...b },
+      a: { index: indices[i]!, ...a },
+      b: { index: indices[j]!, ...b },
     };
   }
   if (i != undefined) {
     const [b] = gather(m[i], patternsB, i - 1 - patternsA.length);
-    return { index, b: { index: indices[i], ...b } };
+    return { index, b: { index: indices[i]!, ...b } };
   }
 }
 

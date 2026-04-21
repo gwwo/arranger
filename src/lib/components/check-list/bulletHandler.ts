@@ -1,5 +1,5 @@
 import type { Input } from "$lib";
-import type { CheckItem } from "$lib/model";
+import type { CheckItem } from "$lib/client/model";
 import { tick } from "svelte";
 
 type BulletAccess = {

@@ -2,7 +2,7 @@
   import {
     isProjectInstance,
     type Instance,
-    type PanelAppear,
+    type PanelLayout,
     type PanelItem,
     type ProjectInstance,
     type ProjectItem,
@@ -12,40 +12,30 @@
   import PanelMain from "$lib/components/PanelMain.svelte";
   import PanelSide from "$lib/components/PanelSide.svelte";
   import ResizePanel from "$lib/components/ResizePanel.svelte";
+  import { setPanelContext } from "$lib/client/context";
 
   type Props = {
-    index: number;
-    appear: PanelAppear;
-    instance: Instance;
-    projects: ProjectItem[];
-    panels: PanelItem[];
+    panel: PanelItem;
+    isHomePanel: boolean;
   };
 
-  let {
-    index,
-    appear = $bindable(),
-    instance = $bindable(),
-    projects = $bindable(),
-    panels = $bindable(),
-  }: Props = $props();
+  let { panel, isHomePanel }: Props = $props();
 
   let newProjIdToReveal: string | null = $state(null);
+
+  let instance = $derived(panel.instance);
+
+  setPanelContext({ panelId: panel.id });
 </script>
 
-<ResizePanel bind:appear>
+<ResizePanel layout={panel.layout}>
   {#snippet side(topBarHeight, bottomBarHeight)}
-    <PanelSide
-      bind:newProjIdToReveal
-      bind:projects
-      bind:instance
-      {topBarHeight}
-      {bottomBarHeight}
-    />
+    <PanelSide bind:newProjIdToReveal {instance} {topBarHeight} {bottomBarHeight} />
   {/snippet}
   {#snippet main(topBarHeight, bottomBarHeight)}
     {#key instance}
       {#if isProjectInstance(instance)}
-        <PanelMain bind:newProjIdToReveal bind:instance {topBarHeight} {bottomBarHeight} />
+        <PanelMain bind:newProjIdToReveal {instance} {topBarHeight} {bottomBarHeight} />
       {:else}
         <OperationPage {instance}></OperationPage>
       {/if}
@@ -53,11 +43,11 @@
   {/snippet}
   {#snippet top(resizingSide, sideReveal)}
     <NavBar
-      {index}
-      bind:panels
+      {isHomePanel}
+      {instance}
       swicherOpacity={0.01 * Math.round(100 * (1 - sideReveal))}
       opacityTransition={!resizingSide}
-      disable={appear.sideShow}
+      disable={panel.layout.sideShow}
     ></NavBar>
   {/snippet}
 </ResizePanel>

@@ -1,6 +1,6 @@
 // place files you want to import through the `$lib` alias in this folder.
 
-export * from "./model";
+export * from "./client/model";
 
 export * from "./components/drag-insert-list";
 

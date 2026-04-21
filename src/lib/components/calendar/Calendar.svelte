@@ -33,7 +33,7 @@
   const dateToday = dateTodayPassed;
   const { getMonthsToCover, dateMonthZeroWeekIndex, dateLastWeekIndex } = useCalendar(
     dateToday,
-    50,
+    500,
   );
 
   const containerHeight = cellSizeWithGap * 8;

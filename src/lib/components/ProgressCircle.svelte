@@ -59,12 +59,13 @@
   .progress-ring {
     stroke-dasharray: var(--dasharray);
     stroke-dashoffset: var(--dashoffset);
+    animation: progress-in 500ms ease;
     transition: stroke-dashoffset 500ms ease;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .progress-ring {
-      transition: none;
+  @keyframes progress-in {
+    from {
+      stroke-dashoffset: var(--dasharray);
     }
   }
 </style>
