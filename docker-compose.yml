@@ -9,7 +9,8 @@ services:
       - /app/node_modules
     ports:
       - 5173:5173
-      # to run `bunx drizzle-kit studio --host 0.0.0.0` and visit `https://local.drizzle.studio/`
+      # expose port 4983 to run `bunx drizzle-kit studio --host 0.0.0.0` 
+      # and visit `https://local.drizzle.studio/`
       - 4983:4983
     command: sleep infinity
 

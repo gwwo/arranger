@@ -103,7 +103,7 @@ Dependencies:
     - append-only scope-tagged update logs per entity for delta sync
   - [x] auth setup
     - better-auth with email/password and Google OAuth configured
-  - [ ] auth routes
+  - [x] auth routes
     - sign-up, sign-in, sign-out, session management (better-auth handlers)
     - email verification; password reset via email link
   - [ ] pull endpoint
@@ -122,12 +122,14 @@ Dependencies:
 2. Run `bun run dev --host`
 3. Visit `http://localhost:5173`
 
-## Production
+## Deploy to your VPS
 
 ```sh
-# start
-docker compose -f docker-compose.prod.yml up -d
+# run from local machine, requires a Docker context pointing to VPS
 
-# stop
-docker compose -f docker-compose.prod.yml down --remove-orphans
+# rebuild image and start containers
+docker --context myserver compose -f docker-compose.prod.yml up -d --build
+
+# stop and remove containers
+docker --context myserver compose -f docker-compose.prod.yml down
 ```

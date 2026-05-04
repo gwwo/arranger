@@ -16,213 +16,42 @@ export const mockProjects: ProjectItem[] = [
     note: "Arranger dev progress",
     rows: [
       newGroupingItem({ label: "UI" }),
-      newTodoItem({
-        title: "infinite-scroll calendar",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "renders only months within the viewport + buffer", ticked: true }),
-          newCheckItem({ text: "month indicator overlay during scroll", ticked: true }),
-          newCheckItem({ text: '"back to today" button when scrolled far', ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "natural language date parser",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "regex-based", ticked: true }),
-          newCheckItem({ text: "combinable semantics: day-of-week, ordinal, duration offset, week/month/year range", ticked: true }),
-          newCheckItem({ text: "multiple candidates for ambiguous input", ticked: true }),
-          newCheckItem({ text: "narrows as you type", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "drag and drop",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "reusable drag-insert-list component", ticked: true }),
-          newCheckItem({ text: "phantom preview", ticked: true }),
-          newCheckItem({ text: "multi-row drag", ticked: true }),
-          newCheckItem({ text: "todos and groups movable across projects via sidebar or popup sub-panel", ticked: true }),
-          newCheckItem({ text: "check dragging area confined", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "multi-panel layout",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "resizable panels with drag handles", ticked: true }),
-          newCheckItem({ text: "collapsible sidebar", ticked: true }),
-          newCheckItem({ text: "popup sub-panels: open, close, duplicate", ticked: true }),
-          newCheckItem({ text: "panel switcher for quick view navigation", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "project view",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "drag-to-reorder project list", ticked: true }),
-          newCheckItem({ text: "inline rename", ticked: true }),
-          newCheckItem({ text: "detail view: name, note, groups, todos", ticked: true }),
-          newCheckItem({ text: "auto-scroll when todos are dragged near the edges", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "todo view",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "expandable card", ticked: true }),
-          newCheckItem({ text: "title/note editing", ticked: true }),
-          newCheckItem({ text: "nested checks", ticked: true }),
-          newCheckItem({ text: "icon bar for planned date and check actions", ticked: true }),
-          newCheckItem({ text: "keyboard shortcuts to delete/create/navigate checks", ticked: true }),
-          newCheckItem({ text: "line-break handling on paste", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "row operations",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "multi-select (ctrl/cmd+click)", ticked: true }),
-          newCheckItem({ text: "right-click context menu", ticked: true }),
-          newCheckItem({ text: "create button", ticked: true }),
-          newCheckItem({ text: "auto-scroll to new row", ticked: true }),
-        ],
-      }),
+      newTodoItem({ title: "infinite-scroll calendar", status: "complete" }),
+      newTodoItem({ title: "natural language date parser", status: "complete" }),
+      newTodoItem({ title: "drag and drop", status: "complete" }),
+      newTodoItem({ title: "multi-panel layout", status: "complete" }),
+      newTodoItem({ title: "project view", status: "complete" }),
+      newTodoItem({ title: "todo view", status: "complete" }),
+      newTodoItem({ title: "row operations", status: "complete" }),
       newTodoItem({
         title: "functional views",
         note: "shells exist; need type design and live data post-sync",
-        checks: [
-          newCheckItem({ text: "Inbox" }),
-          newCheckItem({ text: "Planned" }),
-          newCheckItem({ text: "Archive" }),
-          newCheckItem({ text: "Trash" }),
-        ],
       }),
-      newTodoItem({
-        title: "refined todo view",
-        checks: [
-          newCheckItem({ text: "planned date and note badges when collapsed" }),
-          newCheckItem({ text: "icon bar fade-out with better spacing" }),
-          newCheckItem({ text: "wire up the date parser" }),
-        ],
-      }),
-      newTodoItem({
-        title: "in-panel page navigation",
-        checks: [
-          newCheckItem({ text: "navigate to project view from Archive/Trash entries" }),
-          newCheckItem({ text: "breadcrumb navigation to go back" }),
-        ],
-      }),
-      newTodoItem({
-        title: "auth/account pages",
-        checks: [
-          newCheckItem({ text: "sign-in / sign-up forms" }),
-          newCheckItem({ text: "email verification flow" }),
-          newCheckItem({ text: "profile" }),
-          newCheckItem({ text: "password change" }),
-          newCheckItem({ text: "sign-out" }),
-        ],
-      }),
+      newTodoItem({ title: "refined todo view" }),
+      newTodoItem({ title: "in-panel page navigation" }),
+      newTodoItem({ title: "auth/account pages" }),
       newTodoItem({ title: "sync indicator and error log page" }),
       newTodoItem({ title: "basic keyboard support" }),
 
       newGroupingItem({ label: "Client" }),
-      newTodoItem({
-        title: "unified mutator layer",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "separate local and remote persistable mutation paths", ticked: true }),
-          newCheckItem({ text: "Svelte context-bound", ticked: true }),
-          newCheckItem({ text: "all state writes go through one interface", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "sync protocol schemas",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "Zod types for push/pull payloads", ticked: true }),
-          newCheckItem({ text: "sparse position specs", ticked: true }),
-          newCheckItem({ text: "scoped deltas", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "mutation overlay",
-        checks: [
-          newCheckItem({ text: "sits above the server cache" }),
-          newCheckItem({ text: "overlay-merged state for optimistic UI" }),
-          newCheckItem({ text: "stamps mutations with pushSeq" }),
-          newCheckItem({ text: "mutation queue for push" }),
-          newCheckItem({ text: "per-field map for UI reads" }),
-        ],
-      }),
-      newTodoItem({
-        title: "sync engine",
-        checks: [
-          newCheckItem({ text: "delta-fetch per scope by syncedAtSeq" }),
-          newCheckItem({ text: "seed on load, re-fetch when stale or on a timer" }),
-          newCheckItem({ text: "compose and batch pending mutations" }),
-          newCheckItem({ text: "one in-flight push at a time" }),
-          newCheckItem({ text: "reconcile mutations on response" }),
-          newCheckItem({ text: "evict cache under memory pressure" }),
-          newCheckItem({ text: "capture and surface sync errors (network vs. conflict)" }),
-          newCheckItem({ text: "retry with backoff" }),
-        ],
-      }),
-      newTodoItem({
-        title: "undo/redo for moves",
-        checks: [
-          newCheckItem({ text: "revert project and todo moves" }),
-          newCheckItem({ text: "command pattern over mutator layer" }),
-        ],
-      }),
-      newTodoItem({ title: "preference persistence to localStorage" }),
+      newTodoItem({ title: "unified mutator layer", status: "complete" }),
+      newTodoItem({ title: "sync protocol schemas", status: "complete" }),
+      newTodoItem({ title: "mutation overlay" }),
+      newTodoItem({ title: "sync engine" }),
+      newTodoItem({ title: "undo/redo for moves" }),
 
       newGroupingItem({ label: "Server" }),
-      newTodoItem({
-        title: "database schema",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "users, projects, groups, todos, checks", ticked: true }),
-          newCheckItem({ text: "append-only scope-tagged update logs per entity for delta sync", ticked: true }),
-        ],
-      }),
-      newTodoItem({
-        title: "auth setup",
-        status: "complete",
-        checks: [
-          newCheckItem({ text: "email/password auth", ticked: true }),
-          newCheckItem({ text: "Google OAuth", ticked: true }),
-        ],
-      }),
+      newTodoItem({ title: "database schema", status: "complete" }),
+      newTodoItem({ title: "auth setup", status: "complete" }),
       newTodoItem({
         title: "auth routes",
-        checks: [
-          newCheckItem({ text: "sign-up" }),
-          newCheckItem({ text: "sign-in" }),
-          newCheckItem({ text: "sign-out" }),
-          newCheckItem({ text: "session management (better-auth handlers)" }),
-          newCheckItem({ text: "email verification" }),
-          newCheckItem({ text: "password reset via email link" }),
-        ],
       }),
       newTodoItem({
         title: "pull endpoint",
-        checks: [
-          newCheckItem({ text: "accept scope and syncedAtSeq" }),
-          newCheckItem({ text: "return delta or full snapshot if absent" }),
-        ],
       }),
       newTodoItem({
         title: "push endpoint",
-        checks: [
-          newCheckItem({ text: "accept mutations and syncedAtSeq" }),
-          newCheckItem({ text: "apply in order" }),
-          newCheckItem({ text: "resolve conflicts" }),
-          newCheckItem({ text: "return delta" }),
-          newCheckItem({ text: "enforce limits (500 rows/project · 100 checks/todo)" }),
-        ],
       }),
-
       newGroupingItem({ label: "Someday" }),
       newTodoItem({ title: "search view and server logic" }),
       newTodoItem({ title: "project export" }),
@@ -467,6 +296,7 @@ export const mockProjects: ProjectItem[] = [
           newCheckItem({ text: "Assassinated; TR succeeded him", ticked: true }),
         ],
       }),
+      newGroupingItem({ label: "Early 20th Century" }),
       newTodoItem({
         title: "26. Theodore Roosevelt",
         note: "1901–1909 · Trust-busting, conservation, and Big Stick foreign policy",
@@ -686,7 +516,7 @@ export const mockProjects: ProjectItem[] = [
           newCheckItem({ text: "Broad tariff regime introduced", ticked: true }),
           newCheckItem({ text: "DOGE federal workforce reductions", ticked: true }),
           newCheckItem({ text: "Withdrew from Paris Climate Agreement again", ticked: true }),
-          newCheckItem({ text: "Not lift Hormuz blockade until deal made with Iran" }),
+          newCheckItem({ text: "US-Israel war on Iran" }),
         ],
       }),
     ],
@@ -1015,16 +845,16 @@ export const mockProjects: ProjectItem[] = [
 
 // important to wire the projects returned from $state to panel's instance, so it actually controls it globally.
 export const mockPanels = (projects: ProjectItem[]): PanelItem[] => {
-  const proj = projects[0];
-  // const todoExpanded = { [proj.rows[6].id]: true };
-  const todoExpanded = undefined;
   return [
     newPanelItem({
-      instance: newProjectInstance({ project: proj, todoExpanded }),
+      instance: newProjectInstance({ project: projects[0] }),
       layout: { sideShow: true, sideWidth: 200, spacerLeft: "disabled" },
     }),
     newPanelItem({
-      instance: newProjectInstance({ project: projects[1] }),
+      instance: newProjectInstance({
+        project: projects[1],
+        todoExpanded: { [projects[1].rows[50].id]: true },
+      }),
     }),
   ];
 };
