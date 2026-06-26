@@ -29,13 +29,24 @@
 
   let current = $state(value);
 
+  // True only while `current` holds unsynced USER keystrokes. Set when the user
+  // edits; cleared whenever `value` is synced into `current` (external change /
+  // blur). A `current !== value` divergence on its own is NOT enough to mean a
+  // pending edit: the bound `value` can change underneath us when a parent swaps
+  // the bound entity as it tears this input down (e.g. switching projects via
+  // `{#key displayed}` — the live `value` getter already points at the new
+  // project while `current` still holds the old one). Flushing that on unmount
+  // would record a spurious mutation and spin the sync indicator.
+  let dirty = false;
+
   // Defense-in-depth: in updateOnBlur mode, flush the pending edit on unmount.
   // The contenteditable's onblur usually catches it, but a parent that tears
   // down the input on click (e.g. a collapse overlay) can race with focus
-  // change — relying on blur alone can drop the latest keystrokes.
+  // change — relying on blur alone can drop the latest keystrokes. Gate on
+  // `dirty` so only genuine pending keystrokes flush, never a stale snapshot.
   $effect(() => {
     return () => {
-      if (updateOnBlur && current !== value) value = current;
+      if (updateOnBlur && dirty && current !== value) value = current;
     };
   });
 
@@ -223,15 +234,19 @@
     bind:innerText={
       () => {
         current = value;
+        // External value change reconciled into the buffer — no longer dirty.
+        dirty = false;
         return value;
       },
       (v) => {
         current = v === "\n" ? "" : v;
+        dirty = true;
         if (!updateOnBlur) value = current;
       }
     }
     onblur={(ev) => {
       if (updateOnBlur) value = current;
+      dirty = false;
       onblur?.(ev);
     }}
     onkeydown={(ev) => {
