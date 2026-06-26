@@ -236,6 +236,7 @@ export const useCalendar = (dateMonthZero: CalendarDate, monthRadius: number = 1
   return {
     getMonthsToCover,
     getMonth,
+    getWeekIndexForDate,
     dateMonthZeroWeekIndex: getWeekIndexForDate(dateMonthZero),
     dateLastWeekIndex: getWeekIndexForDate(dateLast),
   };

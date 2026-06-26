@@ -1,11 +1,18 @@
 <script lang="ts" module>
   import { useCreateCheck, useEditTodo } from "$lib/client/mutate-remote";
+  import type { CheckItem } from "$lib";
 
   const useMutator = () => ({
     editTodo: useEditTodo(),
     createCheck: useCreateCheck(),
   });
-  type Mutator = ReturnType<typeof useMutator>;
+  type Mutator = {
+    editTodo: ReturnType<typeof useEditTodo> | ((data: Parameters<ReturnType<typeof useEditTodo>>[0]) => void);
+    createCheck?: ReturnType<typeof useCreateCheck>;
+    editCheck?: (checkId: string, data: Partial<Omit<CheckItem, "id">>) => void;
+    moveCheck?: (checkIds: string[], index: number) => void;
+    deleteCheck?: (checkId: string) => void;
+  };
 </script>
 
 <script lang="ts">
@@ -18,7 +25,7 @@
     newCheckItem,
     slideFly,
   } from "$lib";
-  import type { CheckItem, TodoItem } from "$lib";
+  import type { TodoItem } from "$lib";
   import {
     getMonthName,
     listDaysOfWeek,
@@ -26,16 +33,17 @@
     getDayOfW,
   } from "$lib/components/calendar/utils";
   import type { CalendarDate } from "@internationalized/date";
-  import { onMount, tick, untrack } from "svelte";
-  import { slide } from "svelte/transition";
+  import { fly, slide } from "svelte/transition";
   import CheckList, { type CheckToFocus } from "../check-list/CheckList.svelte";
   import type { ReadonlyDeep } from "$lib/utils/type-gymnastics";
   type Props = {
     todo: ReadonlyDeep<TodoItem>;
-    mut?: Mutator;
+    mut?: Mutator | null;
+    onEnter?: () => void;
+    onEscape?: () => void;
   };
 
-  let { todo, mut = useMutator() }: Props = $props();
+  let { todo, mut = useMutator(), onEnter, onEscape }: Props = $props();
 
   let titleInput: Input | null = null;
   let noteInput: Input;
@@ -59,7 +67,7 @@
   });
   const getDate = () => todo.planned as CalendarDate;
 
-  const setDate = (planned: CalendarDate) => mut.editTodo({ planned });
+  const setDate = (planned: CalendarDate) => mut?.editTodo({ planned });
 
   const formatplanned = (planned: CalendarDate) => {
     const month = getMonthName(planned.month).slice(0, 3);
@@ -89,12 +97,14 @@
 
 <Input
   bind:this={titleInput}
-  bind:value={() => todo.title, (v) => (v !== todo.title ? mut.editTodo({ title: v }) : null)}
+  bind:value={() => todo.title, (v) => (v !== todo.title ? mut?.editTodo({ title: v }) : null)}
   updateOnBlur
+  disabled={mut == null}
   placeholder={placeholder.todo.title}
-  class="min-h-6 wrap-break-word"
+  class="min-h-6 wrap-break-word text-[15px]"
   onkeydown={(ev: KeyboardEvent) => {
-    if (ev.key === "Enter") ev.preventDefault();
+    if (ev.key === "Enter") { ev.preventDefault(); onEnter?.(); }
+    if (ev.key === "Escape") onEscape?.();
   }}
   onNavigateOut={(direction, preferredX, ev) => {
     ev.preventDefault();
@@ -106,10 +116,12 @@
 
 <Input
   bind:this={noteInput}
-  bind:value={() => todo.note, (v) => (v !== todo.note ? mut.editTodo({ note: v }) : null)}
+  bind:value={() => todo.note, (v) => (v !== todo.note ? mut?.editTodo({ note: v }) : null)}
   updateOnBlur
+  disabled={mut == null}
   placeholder={placeholder.todo.note}
-  class="mt-2 min-h-12 wrap-break-word"
+  class="mt-2 min-h-12 pr-2 wrap-break-word text-[15px]"
+  onkeydown={(ev: KeyboardEvent) => { if (ev.key === "Escape") onEscape?.(); }}
   onNavigateOut={(direction, preferredX, ev) => {
     ev.preventDefault();
     if (direction == "up") {
@@ -130,6 +142,10 @@
       <CheckList
         data={todo.checks as CheckItem[]}
         {checkToFocus}
+        {onEscape}
+        mut={mut == null ? null : (mut.editCheck != null || mut.moveCheck != null || mut.deleteCheck != null)
+        ? { createCheck: mut.createCheck, editCheck: mut.editCheck, moveCheck: mut.moveCheck, deleteCheck: mut.deleteCheck }
+        : mut.createCheck != null ? undefined : null}
         onNavigateOut={(direction, preferredX, ev) => {
           ev.preventDefault();
           if (direction == "up") {
@@ -141,13 +157,13 @@
   </div>
 {/if}
 
-{#if todo.planned}
-  <div
-    class="h-fit w-full"
-    in:slideFly={{ axis: "y", duration: 250, x: 40 }}
-    out:slideFly={{ axis: "y", duration: 200, x: 40 }}
-  >
-    <div class="pt-2">
+<div class="mt-2 flex h-8 w-full items-center">
+  {#if todo.planned}
+    <div
+      class="flex-none"
+      in:fly={{ x: 20, duration: 250 }}
+      out:fly={{ x: 20, duration: 200 }}
+    >
       <div
         bind:this={plannedBadge}
         class={[
@@ -160,55 +176,57 @@
           aria-label="to pick another planned"
           onclick={(ev) => {
             const anchor = ev.currentTarget;
-            picker.popup({ anchor, getDate, setDate, getInput: () => "" });
+            picker.popup({ anchor, getDate, setDate });
           }}
         >
           <span class="icon-[fluent--calendar-32-regular] scale-120 text-pink-500"></span>
           <p class="">{formatplanned(todo.planned as CalendarDate)}</p>
         </button>
-        <button
-          class="flex size-6 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-gray-200"
-          aria-label="to clear the planned"
-          onclick={(ev) => {
-            mut.editTodo({ planned: null });
-          }}
-        >
-          <span class="icon-[ic--round-close]"></span>
-        </button>
+        {#if mut != null}
+          <button
+            class="flex size-6 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-gray-200"
+            aria-label="to clear the planned"
+            onclick={() => mut?.editTodo({ planned: null })}
+          >
+            <span class="icon-[ic--round-close]"></span>
+          </button>
+        {/if}
       </div>
     </div>
-  </div>
-{/if}
-
-<div class="mt-2 flex h-8 w-full items-center justify-end">
-  {#if todo.checks.length === 0}
-    <div class="flex-none" in:slideFly={{ axis: "x", duration: 250 }}>
-      <Inputbar
-        placeholder="Checklist"
-        class="icon-[cil--list] scale-75"
-        bind:text={
-          () => "" as string,
-          (val) => {
-            const checks = val.split(/\r\n|\r|\n/).map((text) => ({ text }));
-            mut.createCheck(checks, 0).then(() => {
-              checkToFocus = { index: checks.length - 1 };
-            });
-          }
-        }
-      />
-    </div>
   {/if}
-  {#if todo.planned == null}
-    <div class="flex-none" in:slideFly={{ axis: "x", duration: 250 }}>
-      <div class="pl-2">
+  <div class="ml-auto flex items-center">
+    {#if todo.checks.length === 0 && mut?.createCheck != null}
+      <div class="flex-none" in:slideFly={{ axis: "x", duration: 250 }}>
         <Inputbar
-          placeholder="When"
-          bind:text={plannedInput}
-          bind:expanded={plannedExpanded}
-          class="icon-[fluent--calendar-32-regular] scale-90"
-          {onExpand}
+          placeholder="Checklist"
+          class="icon-[cil--list] scale-75"
+          bind:text={
+            () => "" as string,
+            (val) => {
+              const checks = val.split(/\r\n|\r|\n/).map((text) => ({ text }));
+              mut?.createCheck?.(checks, 0);
+              // Focus the new check synchronously (same flush as the insert) and
+              // without scrolling: the caret-into-view scroll would otherwise yank
+              // the whole card as the checklist slides in. noScroll pins the scroll
+              // container across the slide-in so the viewport stays put.
+              checkToFocus = { index: checks.length - 1, noScroll: true };
+            }
+          }
         />
       </div>
-    </div>
-  {/if}
+    {/if}
+    {#if todo.planned == null && mut != null}
+      <div class="flex-none" in:slideFly={{ axis: "x", duration: 250 }}>
+        <div class="pl-2">
+          <Inputbar
+            placeholder="When"
+            bind:text={plannedInput}
+            bind:expanded={plannedExpanded}
+            class="icon-[fluent--calendar-32-regular] scale-90"
+            {onExpand}
+          />
+        </div>
+      </div>
+    {/if}
+  </div>
 </div>

@@ -31,25 +31,31 @@
   const cellSizeWithGap = cellSize + gapWidth;
   // so is dateTodayPassed
   const dateToday = dateTodayPassed;
-  const { getMonthsToCover, dateMonthZeroWeekIndex, dateLastWeekIndex } = useCalendar(
-    dateToday,
-    500,
-  );
+  const { getMonthsToCover, getWeekIndexForDate, dateMonthZeroWeekIndex, dateLastWeekIndex } =
+    useCalendar(dateToday, 4000);
 
   const containerHeight = cellSizeWithGap * 8;
   const scrollHeight = cellSizeWithGap * (dateLastWeekIndex + 1) - gapWidth;
+  const maxScrollTop = scrollHeight + bottomBarHeight - containerHeight;
 
   const calcTop = (weekIndex: number) =>
     cellSizeWithGap * weekIndex - (weekIndex !== 0 ? gapWidth : 0);
 
   const scrollTopToday = calcTop(dateMonthZeroWeekIndex);
 
+  const scrollTopInitial = (() => {
+    if (!dateChosen) return scrollTopToday;
+    const chosenDate = new CalendarDate(dateChosen.year, dateChosen.month, dateChosen.day);
+    const top = calcTop(getWeekIndexForDate(chosenDate));
+    return Math.max(0, Math.min(top, maxScrollTop));
+  })();
+
   const { doScroll, isScrolling, isScrollingFar, stopScrollSoon } = useScrollingTrack(
     cellSizeWithGap * 10,
   );
 
   const { scrollTopBind, getScrollTop, scrollTopTo } = useScrollTopBind(
-    scrollTopToday,
+    scrollTopInitial,
     (scrollTop) => doScroll(scrollTop),
   );
 
@@ -171,7 +177,7 @@
         onmousedown={(ev) => ev.preventDefault()}
         style:height={`${bottomBarHeight}px`}
       >
-        <div class="flex items-center gap-1 rounded-sm px-2 text-white group-hover:bg-[#4e535b]">
+        <div class="flex items-center gap-1 rounded-sm px-2 text-[#c5c9cf] group-hover:bg-[#4e535b]">
           <span
             class={upAwayFromToday
               ? "icon-[icon-park-outline--down]"
@@ -261,8 +267,8 @@
     <button
       class={[
         "flex w-full flex-col items-center justify-center rounded-md",
-        "cursor-default text-white select-none",
-        compareToday < 0 && "pointer-events-none opacity-50",
+        "cursor-default select-none",
+        compareToday < 0 ? "text-white/50" : "text-white",
         chosen ? "bg-[#6a97f8]" : "hover:bg-[#4f555d]",
       ]}
       style:min-width={`${cellSize}px`}

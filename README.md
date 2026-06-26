@@ -9,17 +9,21 @@ A self-hosted productivity web app inspired by Things for macOS, focused on smoo
 
 A deployed [demo](https://arranger.gwo.me) reflects current progress.
 
+
+
+https://github.com/user-attachments/assets/50ac0b47-6da0-49a4-82dd-7b5b13afeae9
+
+
+
 ## Tech Stack
 
-**_Docker · Bun · Typescript · SvelteKit + Svelte 5 · Tailwind CSS · PostgreSQL · Drizzle ORM_**
+**_Docker · Bun · Typescript · SvelteKit + Svelte 5 · PostgreSQL_**
 
-Dependencies:
-
-- `better-auth` for auth
+- `tailwindcss` for styling
+- `drizzle-orm` for type-safe database access
 - `zod` for validation
 - `@internationalized/date` for date utils
 - `iconify` for icons
-- all UI components hand-rolled
 
 ## Features / Goals
 
@@ -32,104 +36,77 @@ Dependencies:
 - **Search** — full-text search across todos and projects, with filters
 - **Panels** — resizable multi-panel layout for placing views side by side; collapsible side bar, popup sub-panel, and switcher for quick navigation
 - **Offline-friendly sync** — sequence-stamped server cache for delta fetches, with local mutation overlay for optimistic UI and push composition
-- **User account** — sign up, sign in, and basic account management
-- **Multi-client ready** — server-side conflict resolution for concurrent clients
+- **User account** — sign up, sign in, email verification, Oauths, and account management
+- **Concurrent-write robust** — server-side conflict resolution and client-side reconciliation for concurrent writes
 
-## Todos / Progress
 
-- **UI**
-  - [x] infinite-scroll calendar
-    - renders only months within the viewport + buffer
-    - month indicator overlay during scroll
-    - "back to today" button when scrolled far
-  - [x] natural language date parser
-    - regex-based; combinable semantics: day-of-week, ordinal, duration offset, week/month/year range
-    - multiple candidates for ambiguous input; narrows as you type
-  - [x] drag and drop
-    - generic drag-insert-list component (reusable; phantom preview; multi-row drag)
-    - todos and groups movable across projects via sidebar or popup sub-panel
-    - check dragging area confined
-  - [x] multi-panel layout
-    - resizable panels with drag handles; collapsible sidebar
-    - popup sub-panels: open, close, duplicate
-    - panel switcher for quick view navigation
-  - [x] project view
-    - sidebar proj-list: drag-to-reorder, inline rename
-    - detail view: name, note, groups, todos
-    - auto-scroll when todos are dragged near the edges
-  - [x] todo view
-    - expandable card; title/note editing; nested checks
-    - icon bar for planned date and check actions
-    - keyboard shortcuts to delete/create/navigate checks
-    - line-break handling on paste
-  - [x] row operations
-    - multi-select (ctrl/cmd+click); right-click context menu
-    - create button; auto-scroll to new row
-  - [ ] functional views
-    - Inbox, Planned, Archive, Trash
-    - shells exist; need type design and live data post-sync
-  - [ ] refined todo view
-    - planned date and note badges when collapsed
-    - icon bar fade-out with better spacing
-    - wire up the date parser
-  - [ ] in-panel page navigation
-    - navigate to project view from Archive/Trash entries
-    - breadcrumb navigation to go back
-  - [ ] auth/account pages
-    - sign-in / sign-up forms; email verification flow
-    - profile, password change, sign-out
-  - [ ] sync indicator and error log page
-  - [ ] basic keyboard support
-- **Client**
-  - [x] unified mutator layer
-    - separate local and remote persistable mutation paths
-    - Svelte context-bound; all state writes go through one interface
-  - [x] sync protocol schemas
-    - Zod types for push/pull payloads, sparse position specs, scoped deltas
-  - [ ] mutation overlay
-    - sits above the server cache; overlay-merged state for optimistic UI
-    - stamps mutations with pushSeq; mutation queue for push, per-field map for UI reads
-  - [ ] sync engine
-    - pull: delta-fetch per scope by syncedAtSeq; seed on load, re-fetch when stale or on a timer
-    - push: compose and batch pending mutations; one in-flight at a time
-    - reconcile mutations on response; evict cache under memory pressure
-    - capture and surface sync errors (network vs. conflict); retry with backoff
-  - [ ] undo/redo for moves
-    - revert project and todo moves (command pattern over mutator layer)
-  - [ ] preference persistence to localStorage
-- **Server**
-  - [x] database schema
-    - users, projects, groups, todos, checks
-    - append-only scope-tagged update logs per entity for delta sync
-  - [x] auth setup
-    - better-auth with email/password and Google OAuth configured
-  - [x] auth routes
-    - sign-up, sign-in, sign-out, session management (better-auth handlers)
-    - email verification; password reset via email link
-  - [ ] pull endpoint
-    - accept (scope, syncedAtSeq); return delta or full snapshot if absent
-  - [ ] push endpoint
-    - accept (mutations, syncedAtSeq); apply in order; resolve conflicts; return delta
-    - enforce limits (500 rows/project · 100 checks/todo)
-- **Someday**
-  - [ ] search view and server logic
-  - [ ] project export
-  - [ ] end-to-end encryption
+## Current Task
+
+A well-rounded sync system.
 
 ## Dev Setup
 
-1. Open in VSCode devcontainer
-2. Run `bun run dev --host`
-3. Visit `http://localhost:5173`
+Requires only **Docker** and **VSCode** (with the Dev Containers extension) on your machine — Bun, Postgres, and all tooling run inside the containers.
+
+1. Create your env file: `cp .env.example .env` — the defaults work out of the box. (Do this first: reopening starts the Postgres container, which reads `.env`.)
+2. Open the repo in VSCode and run **Dev Containers: Reopen in Container**.
+3. Create the database tables from the schema: `bunx drizzle-kit push`.
+4. Start the dev server: `bun run dev --host`.
+5. Visit `http://localhost:5173`.
 
 ## Deploy to your VPS
 
-```sh
-# run from local machine, requires a Docker context pointing to VPS
+A single VPS running Docker, where the whole stack runs as Docker Compose containers — Caddy (TLS), the SvelteKit app, and Postgres. 
 
-# rebuild image and start containers
+```
+Internet → (DNS / optional Cloudflare) → Caddy (TLS, :80/:443) → web (Bun + SvelteKit) → db (Postgres)
+```
+
+You build and deploy entirely from your laptop over an SSH Docker context — no git repo is checked out on the server. For that, create the context on your laptop beforehand: `docker context create myserver --docker "host=ssh://user@your-vps"`.
+
+### 1. Point your domain at the VPS
+
+Add a DNS `A` record `your-domain.com → <VPS public IP>`. Caddy provisions a Let's Encrypt cert automatically the first time the stack starts.
+
+> Behind Cloudflare's proxy? Set SSL/TLS mode to **Full (strict)**. Otherwise Cloudflare talks HTTP to the origin, Caddy keeps redirecting it to HTTPS, and you get a redirect loop.
+
+### 2. Set your domain in two files
+
+- `Caddyfile` — replace `arranger.gwo.me` with your domain.
+- `docker-compose.prod.yml` — set `ORIGIN: https://your-domain.com` on the `web` service.
+
+### 3. Create the prod env file
+
+Run `cp .env.prod.example .env.prod` and fill in the necessary env variables.
+
+### 4. First deploy
+
+```sh
+# build images and start the stack (run from your laptop)
 docker --context myserver compose -f docker-compose.prod.yml up -d --build
 
-# stop and remove containers
+# verify TLS — issuance is async (a few seconds, up to ~30s after startup);
+# follow the log and wait for "certificate obtained successfully" (Ctrl-C to stop)
+docker --context myserver compose -f docker-compose.prod.yml logs -f caddy
+
+# create/update the database tables — first deploy, and whenever the schema changes
+docker --context myserver compose -f docker-compose.prod.yml --profile tools run --build --rm migrate
+```
+
+Then open `https://your-domain.com` — the app should be running, served over a valid cert.
+
+### 5. Operate & update
+
+```sh
+# ship updates: re-run the deploy command — Compose rebuilds only what changed
+docker --context myserver compose -f docker-compose.prod.yml up -d --build
+
+# tail logs (swap web for caddy or db)
+docker --context myserver compose -f docker-compose.prod.yml logs -f web
+
+# reclaim disk — build cache accumulates and can fill the VPS
+docker --context myserver system prune -f
+
+# stop and remove the containers (named volumes — DB data — persist)
 docker --context myserver compose -f docker-compose.prod.yml down
 ```

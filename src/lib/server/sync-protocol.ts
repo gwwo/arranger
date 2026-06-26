@@ -1,226 +1,143 @@
-import z from "zod";
-
-const checkFields = z.object({
-  content: z.string(),
-  ticked: z.boolean(),
-});
-
-const todoFields = z.object({
-  title: z.string(),
-  note: z.string(),
-  done: z.boolean(),
-  planned: z.iso.date().nullable(), // `null` clears the date
-});
-
-const groupFields = z.object({ label: z.string() });
-
-const projFields = z.object({
-  name: z.string(),
-  note: z.string(),
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUSH
-// ═══════════════════════════════════════════════════════════════════════════════
-// Workflow:
-//  1. Client sends mutation together with syncedAtSeq for the affected scope(s).
-//  2. Server tries to apply the mutations, then computes and returns delta from
-//     syncedAtSeq to the new head seq (could simply be an ack of what was newly applied).
-//  3. Client merges the delta, advances its syncedAtSeq.
+// ─── Single-client optimistic-push sync protocol ─────────────────────────────
 //
-// Principles:
-//  - Co-locate as many userful scopes touched by the mutation into one round trip so the
-//    client can advance their `syncedAtSeq` in one step.
-//  - Narrow down delta. Avoid sending content the client already has.
-
-// `positionSpec` is used to express a reorder, arrival, or creation of an entry within
-// an ordered list.
+// Client applies mutations locally, enqueues ops, and pushes them serially.
+// On startup, the client pulls the full state. There is no delta/log-based
+// pull and no conflict resolution — single-client only.
 //
-// To sparsely express the change made to an old list, (along with a movedOut record)
-// we use a positionSpec array that enumerates entries in their new intended position.
-// (Each entry will carry its identity, e.g. checkId, rowId — added by the containing schema).
+// Each user action emits 1 or more ops. Reorders carry the full new order of
+// the affected scope; server rewrites sortKeys densely (0..n-1).
+// Cross-project row moves are expressed as two reorders: one for the
+// destination project (including the moved row) and one for the source.
 //
-//   `startAtIndex`  — absolute index of this entry in the new list; when omitted,
-//                     index is inferred as previous entry's index + 1 (run-length).
-//   `moveHere`      — this entry is newly moved to this position.
-//   `createHere`    — this entry is being created at this position.
-//
-// Entries with neither flag set are "untouched", and are sometimes included as
-// conflict-resolution context, so the server can make sensible decisions when the list
-// has diverged (e.g. landing a moved todo under the right group header even
-// when other rows have been inserted or removed since the client's last sync).
-const positionSpec = z
-  .object({
-    startAtIndex: z.int().nonnegative(),
-    moveHere: z.boolean(),
-    createHere: z.boolean(),
-  })
-  .partial();
+// IDs are UUIDs minted by the client; server respects them.
 
-export const todoUpdate = todoFields
-  .extend({
-    // The seq through which the client has fully received this todo's content.
-    // When absent, the server assumes the client has no base version
-    syncedAtSeq: z.int().nonnegative(),
-    // Sparse new ordering of checks (see positionSpec).
-    orderChecks: z.array(positionSpec.extend({ checkId: z.uuid() })),
-    // Hard-deletes these checks.
-    deleteChecks: z.array(z.uuid()),
-    // Partial field edits keyed by checkId.
-    editChecks: z.record(z.uuid(), checkFields.partial()),
-  })
-  .partial()
-  .extend({ todoId: z.uuid() });
+import { z } from "zod";
 
-// Hard-deletes a todo and cascades to its checks.
-// Use projUpdate.deleteRows to remove a todo from a project —
-// that path advances the per-proj syncedAtSeq in the same request.
-//
-// `positionSyncedAtSeq` — the seq through which the client has seen this todo's
-// placement/position. Distinct from the per-todo content syncedAtSeq in todoUpdate.
-// The server uses this to detect a stale delete: if the todo was moved to archive
-// after positionSyncedAtSeq, we could reject the delete.
-export const todoDelete = z.object({
-  todoId: z.uuid(),
-  positionSyncedAtSeq: z.int().nonnegative(),
+const uuid = z.uuid();
+const dateStr = z.iso.date().nullable(); // YYYY-MM-DD or null
+
+const rowKind = z.enum(["todo", "group"]);
+
+export const opSchema = z.discriminatedUnion("kind", [
+  // ─── projects ────────────────────────────────────────────────────────────
+  z.object({
+    kind: z.literal("proj.create"),
+    id: uuid,
+    name: z.string(),
+    note: z.string(),
+  }),
+  z.object({
+    kind: z.literal("proj.update"),
+    id: uuid,
+    name: z.string().optional(),
+    note: z.string().optional(),
+  }),
+  z.object({ kind: z.literal("proj.delete"), id: uuid }),
+  // Full new order of the user's active project list (placement = "list").
+  z.object({ kind: z.literal("proj.reorder"), order: z.array(uuid) }),
+
+  // ─── todos ───────────────────────────────────────────────────────────────
+  z.object({
+    kind: z.literal("todo.create"),
+    id: uuid,
+    projId: uuid,
+    title: z.string(),
+    note: z.string(),
+    done: z.boolean(),
+    planned: dateStr,
+  }),
+  z.object({
+    kind: z.literal("todo.update"),
+    id: uuid,
+    title: z.string().optional(),
+    note: z.string().optional(),
+    done: z.boolean().optional(),
+    planned: dateStr.optional(),
+  }),
+  z.object({ kind: z.literal("todo.delete"), id: uuid }),
+
+  // ─── groups ──────────────────────────────────────────────────────────────
+  z.object({
+    kind: z.literal("group.create"),
+    id: uuid,
+    projId: uuid,
+    label: z.string(),
+  }),
+  z.object({
+    kind: z.literal("group.update"),
+    id: uuid,
+    label: z.string().optional(),
+  }),
+  z.object({ kind: z.literal("group.delete"), id: uuid }),
+
+  // Full new row order within a project. Each row is set to projId + sortKey=i.
+  // This also handles moved-in rows (their projId is overwritten).
+  z.object({
+    kind: z.literal("row.reorder"),
+    projId: uuid,
+    order: z.array(z.object({ kind: rowKind, id: uuid })),
+  }),
+
+  // ─── checks ──────────────────────────────────────────────────────────────
+  z.object({
+    kind: z.literal("check.create"),
+    id: uuid,
+    todoId: uuid,
+    content: z.string(),
+    ticked: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("check.update"),
+    id: uuid,
+    content: z.string().optional(),
+    ticked: z.boolean().optional(),
+  }),
+  z.object({ kind: z.literal("check.delete"), id: uuid }),
+  z.object({
+    kind: z.literal("check.reorder"),
+    todoId: uuid,
+    order: z.array(uuid),
+  }),
+]);
+
+export type Op = z.infer<typeof opSchema>;
+
+export const pushBodySchema = z.object({
+  ops: z.array(opSchema),
 });
+export type PushBody = z.infer<typeof pushBodySchema>;
 
-export const projUpdate = projFields
-  .extend({
-    // The seq through which the client has fully received this project's content
-    // (rows, their ordering, and their contents, see `projPull`).
-    syncedAtSeq: z.int().nonnegative(),
-    // Sparse new ordering of proj rows
-    orderRows: z.array(
-      positionSpec.extend({
-        // Server creates a shell with `rowId`, if create data is absent in `editRows`
-        rowId: z.uuid(),
-        kind: z.enum(["todo", "group"]),
-        // The seq through which the client has seen this row's placement/position.
-        // Used to detect stale moves.
-        positionSyncedAtSeq: z.int().nonnegative().optional(),
-      }),
-    ),
-    // Rows the client is removing from the project. The server uses deleteRows and
-    // moveOutRows together to help enforce PROJ_ROW_NUM_LIMIT on the resulting state.
-    //
-    // Hard-deletes these rows (and cascades to checks for todos).
-    deleteRows: z.record(z.uuid(), z.enum(["todo", "group"])),
-    // Moves these rows out of the project to the inbox (for todos, if they haven't
-    // already been removed from this proj) or discards groups.
-    moveOutRows: z.record(z.uuid(), z.enum(["todo", "group"])),
-    // Partial field edits for rows keyed by rowId.
-    editRows: z.record(
-      z.uuid(),
-      z.discriminatedUnion("kind", [
-        todoUpdate.omit({ todoId: true }).extend({ kind: z.literal("todo") }),
-        groupFields
-          // syncedAtSeq tracked for the group's content, to narrow down delta
-          .extend({ syncedAtSeq: z.int().nonnegative() })
-          .partial()
-          .extend({ kind: z.literal("group") }),
-      ]),
-    ),
-  })
-  .partial()
-  .extend({ projId: z.uuid() });
+// ─── Pull state shape (what /api/sync/pull returns) ──────────────────────────
 
-// Hard-deletes a project and cascades to all its rows and checks.
-//
-// `positionSyncedAtSeq` — guards against stale deletes in the same way as
-// todoDelete.
-// TBD: should the client send the list of rowIds it believes are in the project
-// so the server can surface any rows the client hasn't seen yet before deleting?
-export const projDelete = z.object({
-  projId: z.uuid(),
-  positionSyncedAtSeq: z.int().nonnegative(),
-});
+export type PullCheck = {
+  id: string;
+  content: string;
+  ticked: boolean;
+};
 
-// Reorders the user's active project list (placement = "list").
-// Field edits (e.g. renaming a project) go through projUpdate, which also
-// returns the per-proj content delta — keeping name edits in projsArrange would
-// require a separate sync scope for the list view. Commented out for now.
-export const projsArrange = z.object({
-  orderProjs: z.array(
-    positionSpec.extend({
-      projId: z.uuid(),
-      positionSyncedAtSeq: z.int().nonnegative().optional(),
-    }),
-  ),
-  // editProjs: z.record(
-  //   z.uuid(),
-  //   projFields.pick({ name: true }).extend({ syncedAtSeq: z.int().nonnegative() }).partial(),
-  // ),
-});
+export type PullTodoRow = {
+  kind: "todo";
+  id: string;
+  title: string;
+  note: string;
+  done: boolean;
+  planned: string | null; // YYYY-MM-DD
+  checks: PullCheck[];
+};
 
-// Expresses the arrival (and relative ordering) of entries newly entering the
-// archive. Archive/trash use chronological order, so
-// `slice` is only the set of entries the client is moving in — not a full
-// reorder of the view. Technically, there's only move-in to the top and move-out of Archive.
-export const archiveArrange = z.object({
-  slice: z.array(
-    z.discriminatedUnion("kind", [
-      z.object({
-        kind: z.literal("proj"),
-        projId: z.uuid(),
-        createHere: z.boolean().optional(),
-        positionSyncedAtSeq: z.int().nonnegative().optional(),
-      }),
-      z.object({
-        kind: z.literal("todo"),
-        todoId: z.uuid(),
-        createHere: z.boolean().optional(),
-        positionSyncedAtSeq: z.int().nonnegative().optional(),
-        // `associateProjId` — for archived todos, records the project they belonged to
-        // at the time of client-side archving, so we can display them for a proj.
-        associateProjId: z.uuid().optional(),
-      }),
-    ]),
-  ),
-});
+export type PullGroupRow = {
+  kind: "group";
+  id: string;
+  label: string;
+};
 
-export const trashArrange = archiveArrange;
+export type PullProject = {
+  id: string;
+  name: string;
+  note: string;
+  rows: (PullTodoRow | PullGroupRow)[];
+};
 
-export const inboxArrange = z.object({
-  slice: z.array(
-    z.object({
-      todoId: z.uuid(),
-      createHere: z.boolean().optional(),
-      positionSyncedAtSeq: z.int().nonnegative().optional(),
-    }),
-  ),
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PULL
-// ═══════════════════════════════════════════════════════════════════════════════
- 
-// Pull the content of a project: projFields + row ordering/exits +
-// todoFields/groupFields for each row + check ordering/exits + checkFields.
-export const projPull = z.object({
-  projId: z.uuid(),
-  // The seq through which the client has fully received this project's content.
-  // Absent → full bootstrap (first load or cache miss).
-  syncedAtSeq: z.int().nonnegative().optional(),
-  // Per-todo content seqs the client already holds that are ahead of syncedAtSeq.
-  // This happens when the server previously returned a todoUpdate reponse stamped
-  // with a seq newer than the project's syncedAtSeq (e.g. an isolated todo edit
-  // that happened before the next full project pull).
-  todoSyncedAtSeq: z.record(z.uuid(), z.int().nonnegative()).optional(),
-});
-
-// Pull the full content of a single todo: todoFields + check ordering/exits + checkFields.
-export const todoPull = z.object({
-  todoId: z.uuid(),
-});
-
-// Pull the user's active project list: proj ordering/exits, and proj names.
-export const projListPull = z.object({
-  syncedAtSeq: z.int().nonnegative().optional(),
-});
-
-// Pull a view of the archive/trash/inbox: an ordered list of entry ids, kinds, and names.
-// TBD: add syncedAtSeq for delta pulls and pagination for large dataset.
-export const archivePull = z.object({});
-export const trashPull = z.object({});
-export const inboxPull = z.object({});
+export type PullState = {
+  projects: PullProject[];
+};

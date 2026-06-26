@@ -11,6 +11,11 @@
   body {
     @apply bg-gradient-to-b from-teal-600 via-teal-500 to-teal-500;
   }
+
+  .pointer-buttons button:not(:disabled),
+  .pointer-buttons [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
@@ -19,5 +24,19 @@
   .no-scrollbar {
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE and old Edge */
+  }
+
+  /* Blink leaves a stray text node after deleting all contenteditable content,
+     placing the caret after an inline ::before placeholder. Take the placeholder
+     out of flow there. WebKit doesn't need this and gets a leftover-caret artifact
+     when the placeholder is absolute, so keep it inline in Safari/iOS.
+     Scoped to the editable input: the disabled (contenteditable="false") branch
+     has no caret, and absolute positioning would pull its placeholder out of flow
+     so a zero-width, truncated (overflow-hidden) box — e.g. a collapsed todo row —
+     clips it. Keeping it inline there lets the placeholder give the box width. */
+  html:not([data-webkit]) [contenteditable="plaintext-only"].is-empty::before {
+    position: absolute;
+    top: 0;
+    left: 0;
   }
 }

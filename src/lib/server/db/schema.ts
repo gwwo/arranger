@@ -6,33 +6,32 @@ import {
   pgTable,
   text,
   timestamp,
-  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { user as authUser } from "./auth-schema";
 
-export const userTable = pgTable(
-  "user_table",
-  {
-    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-    email: text("email").notNull(),
-    // User-wise global monotonic counter. Each mutation increments this within a
-    // transaction and stamps the corresponding update-log rows with createdAtSeq.
-    // All write transactions for a user must be serialized; use `select ... for update` at the beginning;
-    // we can consider a mutateSeq per project to allow concurrent writes of different projects
-    mutateSeq: integer("mutate_seq").notNull().default(0),
-    // Per-placement seq counters used to derive sortKey for newly appended
-    // items in archive/inbox/trash (chronological ordering within those views).
-    // Note that proj's list-placement uses manual sortKey, as with todo/group's proj-placement.
-    archiveSortSeq: integer("archive_sort_seq").notNull().default(0),
-    inboxSortSeq: integer("inbox_sort_seq").notNull().default(0),
-    trashSortSeq: integer("trash_sort_seq").notNull().default(0),
-  },
-  (t) => [uniqueIndex("users_email_uniq").on(t.email)],
-);
+// data-side per-user row, keyed to the auth user.id. Created lazily on first
+// access to the data API. Email isn't stored here — auth owns identity.
+export const userTable = pgTable("user_table", {
+  id: text("id")
+    .primaryKey()
+    .references(() => authUser.id, { onDelete: "cascade" }),
+  // User-wise global monotonic counter. Each mutation increments this within a
+  // transaction and stamps the corresponding update-log rows with createdAtSeq.
+  // All write transactions for a user must be serialized; use `select ... for update` at the beginning;
+  // we can consider a mutateSeq per project to allow concurrent writes of different projects
+  mutateSeq: integer("mutate_seq").notNull().default(0),
+  // Per-placement seq counters used to derive sortKey for newly appended
+  // items in archive/inbox/trash (chronological ordering within those views, but we may insert multiple items at one mutation).
+  // Note that proj's list-placement uses manual sortKey, as with todo/group's proj-placement.
+  archiveSortSeq: integer("archive_sort_seq").notNull().default(0),
+  inboxSortSeq: integer("inbox_sort_seq").notNull().default(0),
+  trashSortSeq: integer("trash_sort_seq").notNull().default(0),
+});
 
 // ─── Limits to impose at application level ────────────────────────────────────
 //
-// limit the total number of todos/groups in a proj; duplicate proj to hold overflows
+// limit the total number of todos + groups in a proj; duplicate proj to hold overflows
 export const PROJ_ROW_NUM_LIMIT = 500;
 // limit the number of projects in a user's active all-proj list.
 export const PROJ_NUM_LIMIT = 200;
@@ -98,24 +97,18 @@ export const projPlacement = pgEnum("proj_placement", ["archive", "trash", "list
 
 export const projTable = pgTable("proj_table", {
   id: uuid("id").primaryKey(),
-  userId: integer("user_id")
+  userId: text("user_id")
     .notNull()
-    .references(() => userTable.id),
+    .references(() => userTable.id, { onDelete: "cascade" }),
   placement: projPlacement("placement").notNull(),
   sortKey: integer("sort_key").notNull(),
   name: text("name"),
   note: text("note"),
 });
 
-export const rowStatus = pgEnum("row_status", ["frozen", "active"]);
 // proj-row = group | todo, sharing the same sortKey space.
-// A proj-row is frozen when it (or its containing project) is moved to archive/trash. In other words, 
-// we propagate the signal to the proj-rows directly at write time of "proj enters archive/trash", 
-// supposed to be a read-path optimization
-
-// Frozen rows reject mutations except, e.g. when the client deliberately
-// (syncedAtSeq > the seq that caused the freeze) unfreezes a todo
-// and mutates its position/note/placement
+// Rows in an archived/trashed project keep placement="project"; whether a row is
+// "live" is derived by joining its proj's placement when needed.
 
 // Groups are essentially visual dividers in the app ui, and always scoped to a project.
 // Cross-project moves are modelled as delete + create;
@@ -124,21 +117,19 @@ export const groupTable = pgTable("group_table", {
   id: uuid("id").primaryKey(),
   projId: uuid("proj_id")
     .notNull()
-    .references(() => projTable.id),
+    .references(() => projTable.id, { onDelete: "cascade" }),
   label: text("label"),
   sortKey: integer("sort_key").notNull(),
-  status: rowStatus("status").notNull(),
 });
 
 export const todoPlacement = pgEnum("todo_placement", ["archive", "trash", "project", "inbox"]);
 
 export const todoTable = pgTable("todo_table", {
   id: uuid("id").primaryKey(),
-  userId: integer("user_id")
+  userId: text("user_id")
     .notNull()
-    .references(() => userTable.id),
+    .references(() => userTable.id, { onDelete: "cascade" }),
   placement: todoPlacement("placement").notNull(),
-  status: rowStatus("status").notNull(),
   // projId must be non-null when in proj-placement; application-enforced
   projId: uuid("proj_id").references(() => projTable.id),
   sortKey: integer("sort_key").notNull(),
@@ -152,7 +143,7 @@ export const checkTable = pgTable("check_table", {
   id: uuid("id").primaryKey(),
   todoId: uuid("todo_id")
     .notNull()
-    .references(() => todoTable.id),
+    .references(() => todoTable.id, { onDelete: "cascade" }),
   sortKey: integer("sort_key").notNull(),
   content: text("content").notNull(),
   ticked: boolean("ticked").notNull().default(false),
@@ -161,19 +152,19 @@ export const checkTable = pgTable("check_table", {
 // ─── B. Update logs (append-only; scope-tagged) ────────────────────────────────────────────
 // Each log row records (the change, the context, the seq-stamp):
 // entity id, field/lifecycle-event, the associated scope at time of write,
-// and createdAtSeq = mutateSeq at time of write.
-// Log rows are never updated. Old rows may be
-// truncated up to a checkpoint seq, but the truncation policy is TBD. We could send the full current state
+// and createdAtSeq = mutateSeq at time of write before increment.
+// Log rows are never updated. Old rows may be compressed, or
+// truncated up to a checkpoint seq, but that is TBD. We could send the full current state
 //  when client has `syncedAtSeq` older than the `oldestValidSeq` checkpoint
 
 export const projUpdate = pgEnum("proj_update", ["enter", "exit", "name", "note", "position"]);
-// "position" change is only meaningful in placement="list"; archive/trash use chronological order
+// "position" change is only meaningful in placement="list"; archive/trash use chronological order, (what if moved out and then moved back)
 // position changes when the relative order changes, not necessarily when the sortKey changes
 
 export const projUpdateLog = pgTable("proj_update_log", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   // to scope a log query to a user's proj-list/archive/trash
-  userId: integer("user_id")
+  userId: text("user_id")
     .notNull()
     .references(() => userTable.id, { onDelete: "cascade" }),
   // No FK on projId; we need exit logs of deleted projs.
@@ -190,14 +181,13 @@ export const groupUpdate = pgEnum("group_update", [
   // groups have no archive/trash and don't really move across projs
   "label",
   "position",
-  "status",
 ]);
 
 export const groupUpdateLog = pgTable("group_update_log", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   // Even though we will only scope query on group log to proj,
   // the addition of userId is for later oldestValidSeq design
-  userId: integer("user_id")
+  userId: text("user_id")
     .notNull()
     .references(() => userTable.id, { onDelete: "cascade" }),
   groupId: uuid("group_id").notNull(),
@@ -218,21 +208,21 @@ export const todoUpdate = pgEnum("todo_update", [
   "done", // toggling the completion checkbox
   "planned",
   "position",
-  "status", // frozen <=> active (see rowStatus)
 ]);
 
 export const todoUpdateLog = pgTable("todo_update_log", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   // to scope a log query to a user's inbox/archive/trash
-  userId: integer("user_id")
+  userId: text("user_id")
     .notNull()
     .references(() => userTable.id, { onDelete: "cascade" }),
   // No FK on todoId; we need exit logs of deleted todos
   todoId: uuid("todo_id").notNull(),
   // placement + projId = a write-time scope tag
   placement: todoPlacement("placement").notNull(),
-  // No FK on projId; todos may outlive the proj they once reside in
-  // We will manually clear logs for deleted todos in deleted projs
+  // No FK on projId; todos may outlive the proj they once reside in, 
+  // and those changes that happened in that proj is still relevant
+  // We may manually clear logs for deleted todos in deleted projs
   projId: uuid("proj_id"),
   update: todoUpdate("update").notNull(),
   createdAtSeq: integer("created_at_seq").notNull(),
@@ -249,7 +239,7 @@ export const checkUpdate = pgEnum("check_update", [
 
 export const checkUpdateLog = pgTable("check_update_log", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  userId: integer("user_id")
+  userId: text("user_id")
     .notNull()
     .references(() => userTable.id, { onDelete: "cascade" }),
   checkId: uuid("check_id").notNull(),

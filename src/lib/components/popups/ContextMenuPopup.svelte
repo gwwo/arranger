@@ -8,11 +8,18 @@
     itemLabel?: string;
     itemLabelPlural?: string;
     onDelete: () => void;
+    // When set, replaces the auto-generated "Delete {label}" text entirely.
+    deleteLabel?: string;
     onClose?: () => void;
     secondaryAction?: {
       label: string;
       onAction: () => void;
     };
+    // Optional extra actions rendered between the secondary action and delete.
+    extraActions?: {
+      label: string;
+      onAction: () => void;
+    }[];
   };
 
   type ContextMenuApi = {
@@ -87,7 +94,7 @@
     }}
   ></div>
   <div
-    class="fixed z-50 w-40 rounded-md border border-gray-200 bg-white text-sm shadow-lg"
+    class="fixed z-50 w-56 rounded-md border border-gray-200 bg-white text-sm shadow-lg"
     style:top={`${request.y}px`}
     style:left={`${request.x}px`}
     onwheel={(ev) => ev.preventDefault()}
@@ -101,8 +108,16 @@
         {request.secondaryAction.label}
       </button>
     {/if}
+    {#each request.extraActions ?? [] as action}
+      <button
+        class="w-full border-b border-gray-200 px-3 py-2 text-left hover:bg-gray-100"
+        onclick={() => { action.onAction(); close(); }}
+      >
+        {action.label}
+      </button>
+    {/each}
     <button class="w-full px-3 py-2 text-left hover:bg-gray-100" onclick={handleDelete}>
-      Delete {getDeleteLabel()}
+      {request.deleteLabel ?? `Delete ${getDeleteLabel()}`}
     </button>
   </div>
 {/if}

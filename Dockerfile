@@ -14,6 +14,12 @@ COPY static ./static
 COPY svelte.config.js vite.config.ts tsconfig.json ./
 RUN bun run build
 
+# Stage 2.5: one-shot schema-push runner (used by the `migrate` compose service)
+FROM base AS migrate
+COPY src/lib/server/db ./src/lib/server/db
+COPY drizzle.config.ts ./
+CMD ["bunx", "drizzle-kit", "push"]
+
 # Stage 3: prod deps only
 FROM oven/bun:1-slim AS deps
 WORKDIR /app

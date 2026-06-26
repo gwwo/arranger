@@ -178,7 +178,9 @@ function show(sd: ShowDate, today?: CalendarDate): [string, string] {
   return [l, `${d_diff.v} ${suffix} ago`];
 }
 
-export function parse(input: string): [string, string][] {
+export type ParseResult = { d: CalendarDate; l: string; r: string };
+
+export function parse(input: string): ParseResult[] {
   const p = process(input);
   if (p == undefined) return [];
   const [first] = p;
@@ -187,7 +189,10 @@ export function parse(input: string): [string, string][] {
       ? first
       : p.map((cand) => (Array.isArray(cand) ? cand[0] : cand));
   const td = getDateConcrete();
-  return arr.map((sd) => show(sd, td));
+  return arr.map((sd) => {
+    const [l, r] = show(sd, td);
+    return { d: sd.d, l, r };
+  });
 }
 
 function process(input: string): (ShowDate | ShowDate[])[] | undefined {

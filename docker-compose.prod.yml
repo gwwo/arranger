@@ -5,5 +5,57 @@ services:
       dockerfile: Dockerfile
       target: run
     restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      # svelte-adapter-bun behind a reverse proxy — see Caddyfile.
+      # ORIGIN is used by SvelteKit's CSRF check and to derive request URLs
+      # (Google OAuth callback URI is built from event.url.origin).
+      ORIGIN: https://arranger.gwo.me
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+    depends_on:
+      - db
+
+  db:
+    image: postgres:18.1-bookworm
+    restart: unless-stopped
+    env_file: .env.prod
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+  # One-shot. Run with:
+  #   docker --context myserver compose -f docker-compose.prod.yml --profile tools run --rm migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate
+    env_file: .env.prod
+    depends_on:
+      - db
+    profiles: ["tools"]
+
+  caddy:
+    # Inline build so the Caddyfile ships with the image — a bind mount of
+    # ./Caddyfile breaks under remote docker contexts (the path resolves on
+    # the daemon's host, not the local one).
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM caddy:2-alpine
+        COPY Caddyfile /etc/caddy/Caddyfile
+    restart: unless-stopped
     ports:
-      - "80:3000"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

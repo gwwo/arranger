@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import type { HTMLAttributes } from "svelte/elements";
+  import { pinScroll } from "$lib/utils/dom";
   type Props = {
     value?: string;
     placeholder?: string;
@@ -27,6 +28,16 @@
   }: Props = $props();
 
   let current = $state(value);
+
+  // Defense-in-depth: in updateOnBlur mode, flush the pending edit on unmount.
+  // The contenteditable's onblur usually catches it, but a parent that tears
+  // down the input on click (e.g. a collapse overlay) can race with focus
+  // change — relying on blur alone can drop the latest keystrokes.
+  $effect(() => {
+    return () => {
+      if (updateOnBlur && current !== value) value = current;
+    };
+  });
 
   // The following is redundant: when disabled becomes true, the editable div is unmounted,
   // which fires blur on the focused element, and the onblur handler already syncs value ← current.
@@ -76,9 +87,16 @@
     };
   };
 
-  export const setCaretPosition = (position: number | "start" | "end") => {
+  export const setCaretPosition = (
+    position: number | "start" | "end",
+    opts?: { noScroll?: boolean },
+  ) => {
     if (element == null) return;
-    element.focus();
+    // Pin the surrounding scroll before focusing so the browser's caret-into-view
+    // scroll (which preventScroll alone doesn't fully suppress) can't yank the
+    // viewport — used when a fresh check is focused mid slide-in.
+    if (opts?.noScroll) pinScroll(element, 300);
+    element.focus({ preventScroll: opts?.noScroll });
     const selection = window.getSelection();
     if (!selection) return;
     const offset = position === "start" ? 0 : position === "end" ? current.length : position;
@@ -175,22 +193,27 @@
     tabindex="0"
     contenteditable="false"
     {...restProps}
-    bind:innerText={
-      () => {
-        current = value;
-        return value;
-      },
-      (v) => {}
-    }
     {placeholder}
     class={[
       "relative focus:outline-none",
       className,
-      current === "" && "is-empty",
+      value === "" && "is-empty",
       "before:pointer-events-none before:text-gray-400 [.is-empty]:before:content-[attr(placeholder)]",
     ]}
-  ></div>
+  >
+    {value}
+  </div>
 {:else}
+  <!-- Chrome (Blink): an empty contenteditable initialised via innerText="" has zero height —
+       no line box is created until the user types and deletes, at which point Blink inserts a
+       <br> sentinel. Spacing rules:
+       - mt-* alone on this element or a zero-height wrapper: the parent's height ends right at
+         this element's border-top edge, and the ::before placeholder (~1lh tall) immediately
+         overflows below it — making it appear as though there is also a bottom margin.
+       - my-* is fine: the mb component adds space below the zero-height box, giving the parent
+         enough height to contain the ::before overflow.
+       - pt-* on a wrapping element is also fine: padding gives the wrapper non-zero height,
+         breaks the margin-collapse chain, and keeps the overflow visually contained. -->
   <div
     role="textbox"
     tabindex="0"

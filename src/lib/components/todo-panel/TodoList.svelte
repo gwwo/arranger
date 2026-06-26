@@ -23,7 +23,11 @@
     useMarkTodo,
     useEditProject,
     useEditGrouping,
+    useTrashTodo,
+    useMoveFromPlacementToProject,
   } from "$lib/client/mutate-remote";
+
+  const placementSources = new Set(["inbox", "archive", "trash"]);
 
   const useMutator = () => ({
     setRowSelected: useSetRowSelected(),
@@ -32,7 +36,9 @@
     setTodoExpanded: useSetTodoExpanded(),
     unexpandTodo: useUnexpandTodo(),
     moveRow: useMoveRow(),
+    moveFromPlacement: useMoveFromPlacementToProject(),
     deleteRow: useDeleteRow(),
+    trashTodo: useTrashTodo(),
     markTodo: useMarkTodo(),
     editProj: useEditProject(),
     editGrouping: useEditGrouping(),
@@ -43,9 +49,15 @@
 <script lang="ts">
   import { Input, placeholder, scrollWithCallback, TodoRow, type ProjectItem } from "$lib";
   import { tick, untrack, type Snippet } from "svelte";
+  import { usePanelFocus } from "$lib/components/PanelGroup.svelte";
+  import { getPanelContext } from "$lib/client/context";
+
+  const { panelId } = getPanelContext();
+  const panelFocus = usePanelFocus();
   import { type Attachment } from "svelte/attachments";
 
   import { type RowItem, usePickerScrollCanceller, toLayoutPoint } from "$lib";
+  import { rangeSelectIds } from "$lib/client/utils";
   import DragList, { type DragPrep, type TargetPrep } from "../drag-insert-list/DragList.svelte";
   import DormantInput from "../DormantInput.svelte";
   import { useContextMenu } from "$lib";
@@ -77,11 +89,13 @@
     ...restProps
   }: Props = $props();
 
-  let rows: Item[] = $derived([headItem, ...data.rows]);
+  let rows: Item[] = $derived(data ? [headItem, ...data.rows] : [headItem]);
 
   let collapsing: Record<string, boolean | undefined> = $state({});
+  let rowIdToScroll: string | null = $state(null);
 
   $effect(() => {
+    if (!data) return;
     const ids = new Set(data.rows.map(({ id }) => id));
     untrack(() => {
       Object.keys(collapsing).forEach((key) => {
@@ -97,7 +111,7 @@
     if (pre == null || isHeadItem(cur)) {
       return 30;
     }
-    const base = isHeadItem(pre) ? 30 : isGroupingItem(cur) ? 40 : isGroupingItem(pre) ? 10 : 0;
+    const base = isHeadItem(pre) ? 20 : isGroupingItem(cur) ? 30 : isGroupingItem(pre) ? 10 : 0;
     if ((!isHeadItem(pre) && expanded[pre.id]) || expanded[cur.id]) {
       return Math.max(expandedSpacing, base);
     }
@@ -134,29 +148,109 @@
       info: { fromProjId },
       items,
     } = insertion;
+    // Project rows (dragged from a placement) can't live inside a project, so
+    // onInsertActive rejects them. Report them as snap-back here too, or the
+    // pile crossfades them to this list — which has no receiver for them — and
+    // they vanish at the drop point instead of gliding back to their source.
+    const snapBackIds = new Set(items.filter((it) => it.kind === "proj").map((it) => it.id));
+    const accepts = (it: ItemInsert) => !it.snapBack && !snapBackIds.has(it.id);
     const move = () => {
+      const rowIds = items.filter(accepts).map(({ id }) => id);
       // remember to use index - 1, since we prepended a HeadItem
-      const rowIds = items.map(({ id }) => id);
-      mut.moveRow(fromProjId, rowIds, index - 1);
-      const idsToSelect = new Set(items.flatMap(({ id, isSelected }) => (isSelected ? [id] : [])));
-      mut.setRowSelected(idsToSelect);
+      const insertAt = index - 1;
+      const idsToSelect = new Set(items.flatMap((it) => (it.isSelected && accepts(it) ? [it.id] : [])));
+      if (placementSources.has(fromProjId)) {
+        mut.moveFromPlacement(rowIds, insertAt);
+        mut.setRowSelected(idsToSelect);
+      } else {
+        mut.moveRow(fromProjId, rowIds, insertAt);
+        mut.setRowSelected(idsToSelect);
+      }
+      panelFocus.setFocus(panelId, "main");
     };
     const pileWidth = node.getBoundingClientRect().width;
-    return { move, info: { pileWidth } };
+    return { move, info: { pileWidth }, snapBackIds };
   };
 
   let headRowEl: HTMLDivElement | null = $state(null);
   let todoRowElements: Record<string, TodoRow | null> = $state({});
   let groupingElements: Record<string, DormantInput | null> = $state({});
+  let rowDivElements: Record<string, HTMLDivElement | null | undefined> = $state({});
   let nameInputEl: Input | null = $state(null);
   const contextMenu = useContextMenu();
 
   export const focusNameInput = () => untrack(() => nameInputEl?.setCaretPosition("end"));
 
+  export const navigateSelection = (direction: "up" | "down") => untrack(() => {
+    const navRows = data.rows;
+    if (navRows.length === 0) return;
+    const selectedIndices = navRows.reduce<number[]>((acc, row, i) => {
+      if (selected[row.id]) acc.push(i);
+      return acc;
+    }, []);
+    const step = direction === "up" ? -1 : 1;
+    let targetIndex =
+      selectedIndices.length === 0
+        ? direction === "up" ? navRows.length - 1 : 0
+        : direction === "up"
+          ? selectedIndices[0] - 1
+          : selectedIndices[selectedIndices.length - 1] + 1;
+    while (
+      targetIndex >= 0 &&
+      targetIndex < navRows.length &&
+      isTodoItem(navRows[targetIndex]) &&
+      expanded[navRows[targetIndex].id]
+    ) {
+      targetIndex += step;
+    }
+    if (targetIndex < 0 || targetIndex >= navRows.length) return;
+    const target = navRows[targetIndex];
+    mut.setRowSelected(target.id);
+    rowIdToScroll = target.id;
+  });
+
+  export const selectAll = () => untrack(() => {
+    const rows = data.rows;
+    if (rows.length === 0) return;
+    const anySelected = rows.some((row) => selected[row.id]);
+    if (!anySelected) {
+      mut.setRowSelected(new Set(rows.map((r) => r.id)));
+      return;
+    }
+    // Assign each row to a group keyed by the leading GroupingItem's id (null = grouping-less)
+    let currentGroupKey: string | null = null;
+    const rowToGroup = new Map<string, string | null>();
+    for (const row of rows) {
+      if (isGroupingItem(row)) currentGroupKey = row.id;
+      rowToGroup.set(row.id, currentGroupKey);
+    }
+    // Collect the groups that contain any currently selected row
+    const selectedGroups = new Set<string | null>();
+    for (const row of rows) {
+      if (selected[row.id]) selectedGroups.add(rowToGroup.get(row.id)!);
+    }
+    // Select every row in those groups
+    mut.setRowSelected(new Set(rows.filter((r) => selectedGroups.has(rowToGroup.get(r.id)!)).map((r) => r.id)));
+  });
+
+  export const activateFirstSelected = () => untrack(() => {
+    const firstSelected = data.rows.find((row) => selected[row.id]);
+    if (!firstSelected) return;
+    if (isGroupingItem(firstSelected)) {
+      groupingElements[firstSelected.id]?.focus();
+    } else {
+      Object.entries(expanded).forEach(([key, val]) => { if (val) collapsing[key] = true; });
+      rowIdToReveal = firstSelected.id;
+      mut.setTodoExpanded(firstSelected.id);
+      mut.setRowSelected(null);
+    }
+  });
+
   autoPrune(() => groupingElements);
   autoPrune(() => todoRowElements);
+  autoPrune(() => rowDivElements);
 
-  const expandDuration = 300;
+  const expandDuration = 200;
 
   const openContextMenu = (ev: MouseEvent, id: string) => {
     ev.preventDefault();
@@ -172,7 +266,7 @@
     const allTodosDone =
       todoItems.length > 0 && todoItems.every((item) => item.status === "complete");
     const { x: layoutX, y: layoutY } = toLayoutPoint(ev.clientX, ev.clientY);
-    const menuWidth = 200;
+    const menuWidth = 224;
     const menuHeight = todoIds.length > 0 ? 80 : 48;
     const margin = 8;
     const viewportWidth = document.documentElement.clientWidth;
@@ -181,6 +275,7 @@
     const maxY = Math.max(margin, viewportHeight - menuHeight - margin);
     const x = Math.min(layoutX, maxX);
     const y = Math.min(layoutY, maxY);
+    const groupingIds = ids.filter((id) => !todoIds.includes(id));
     const todoCount = todoIds.length;
     const actionLabel =
       todoCount === 0
@@ -192,6 +287,14 @@
           : todoCount === 1
             ? "Mark as done"
             : `Mark ${todoCount} todos done`;
+    const trashLabel =
+      todoCount === 1
+        ? "Move row to trash"
+        : todoCount > 1
+          ? `Move ${todoCount} rows to trash`
+          : ids.length === 1
+            ? "Delete row"
+            : `Delete ${ids.length} rows`;
     contextMenu.popup({
       x,
       y,
@@ -206,13 +309,32 @@
               },
             }
           : undefined,
+      deleteLabel: trashLabel,
       onDelete: () => {
-        mut.deleteRow(new Set(ids));
+        if (todoIds.length > 0) mut.trashTodo(new Set(todoIds));
+        else if (groupingIds.length > 0) mut.deleteRow(new Set(groupingIds));
       },
     });
   };
 
   const scrollIntoViewControl: Attachment<HTMLDivElement> = (node) => {
+    $effect(() => {
+      if (rowIdToScroll == null) return;
+      const rowId = rowIdToScroll;
+      untrack(() => { rowIdToScroll = null; });
+      const el = rowDivElements[rowId];
+      if (!el) return;
+      const containerRect = node.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const top = elRect.top - containerRect.top + node.scrollTop;
+      const bottom = elRect.bottom - containerRect.top + node.scrollTop;
+      if (top < node.scrollTop) {
+        node.scrollTo({ top, behavior: 'smooth' });
+      } else if (bottom > node.scrollTop + node.clientHeight) {
+        node.scrollTo({ top: bottom - node.clientHeight, behavior: 'smooth' });
+      }
+    });
+
     $effect(() => {
       if (rowIdToReveal == null) return;
       const rowId = rowIdToReveal;
@@ -307,9 +429,18 @@
 
       const handleMouseDown = (ev: MouseEvent) => {
         const selectDuo = ev.metaKey || ev.ctrlKey;
+        const selectRange = ev.shiftKey;
 
         const alreadySelected = selected[id];
-        if (alreadySelected) {
+        if (selectRange) {
+          const ids = rangeSelectIds(
+            dataToRender.flatMap((it) => (isHeadItem(it) ? [] : [it.id])),
+            id,
+            (rowId) => !!selected[rowId],
+          );
+          mut.setRowSelected(new Set(ids));
+          pendingClick = undefined;
+        } else if (alreadySelected) {
           pendingClick = () => {
             if (selectDuo) mut.unselectRow(id);
             else mut.setRowSelected(id);
@@ -368,11 +499,14 @@
   function onInsertActive(items: ItemInsert[], toRender: Item[], toDerender: Item[]) {
     mut.unexpandTodo(toDerender.map(({ id }) => id));
 
-    const hasGrouping = items.some((it) => isGroupingItem(it.raw));
+    const insertableItems = items.filter((it) => !it.snapBack && it.kind !== "proj");
+    if (insertableItems.length === 0) return { insertables: [], heights: new Map() };
+
+    const hasGrouping = insertableItems.some((it) => isGroupingItem(it.raw));
     const len = toRender.length;
     const insertables: Insertable[] = [];
     const heights: Map<string, number> = new Map();
-    const first = items[0].raw;
+    const first = insertableItems[0].raw;
 
     toRender.forEach((cur, i) => {
       const insertBehind =
@@ -420,11 +554,11 @@
     {@const { id } = item}
     {@const draghandle = getDragHandle(items, id, prepare)}
     {#if isHeadItem(item)}
-      <div bind:this={headRowEl} class="movable mx-4">
+      <div bind:this={headRowEl} class="movable mx-4 flex flex-col gap-4">
         <Input
           bind:this={nameInputEl}
-          class="text-2xl font-semibold wrap-break-word"
-          bind:value={() => data.name, (v) => (v !== data.name ? mut.editProj({ name: v }) : null)}
+          class="text-2xl font-semibold wrap-break-word min-h-lh"
+          bind:value={() => data?.name ?? "", (v) => (data && v !== data.name ? mut.editProj({ name: v }) : null)}
           updateOnBlur
           placeholder={placeholder.project.name}
           onkeydown={(e) => {
@@ -435,8 +569,8 @@
           }}
         ></Input>
         <Input
-          class="mt-4 min-h-12 text-base wrap-break-word"
-          bind:value={() => data.note, (v) => (v !== data.note ? mut.editProj({ note: v }) : null)}
+          class="min-h-12 text-base wrap-break-word"
+          bind:value={() => data?.note ?? "", (v) => (data && v !== data.note ? mut.editProj({ note: v }) : null)}
           updateOnBlur
           placeholder={placeholder.project.note}
         ></Input>
@@ -445,6 +579,7 @@
       {@const borderStyle = getBorderStyle(items, item, index, phantomIndex)}
       {#if isGroupingItem(item)}
         <div
+          bind:this={rowDivElements[id]}
           class={[
             "movable relative mx-2 h-8 overflow-hidden",
             borderStyle,
@@ -472,6 +607,12 @@
             class="absolute inset-x-0"
             style:top={`-${getMarginTop(items[index - 1], item)}px`}
             style:bottom={`-${getMarginTop(item, items[index + 1])}px`}
+            onmousedown={() => {
+              // Flush any pending input edits (Input uses updateOnBlur) before
+              // we tear down the expanded view — otherwise the collapsed view
+              // mounts before the blur fires and reads a stale value.
+              (document.activeElement as HTMLElement | null)?.blur?.();
+            }}
             onclick={() => {
               mut.unexpandTodo(id);
               collapsing[id] = true;
@@ -486,13 +627,14 @@
                 collapsing[id] = false;
               }
             : null}
+          bind:this={rowDivElements[id]}
           class={[
             "movable relative h-fit overflow-hidden",
             borderStyle,
             expanded[id] ? "bg-white" : selected[id] && "bg-pink-200",
             expanded[id] ? "px-2 py-2 shadow-lg" : "mx-2",
             (expanded[id] || collapsing[id]) &&
-              "transition-[margin,padding,background-color,box-shadow] duration-300",
+              "transition-[margin,padding,background-color,box-shadow] duration-200",
           ]}
         >
           <TodoRow
@@ -509,6 +651,18 @@
               });
               rowIdToReveal = id;
               mut.setTodoExpanded(id);
+              mut.setRowSelected(null);
+            }}
+            onEnter={() => {
+              (document.activeElement as HTMLElement | null)?.blur?.();
+              collapsing[id] = true;
+              mut.unexpandTodo(id);
+              mut.setRowSelected(id);
+            }}
+            onEscape={() => {
+              (document.activeElement as HTMLElement | null)?.blur?.();
+              collapsing[id] = true;
+              mut.unexpandTodo(id);
               mut.setRowSelected(id);
             }}
           ></TodoRow>

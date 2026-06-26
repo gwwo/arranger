@@ -20,6 +20,14 @@
     raw: Item;
     id: string;
     isSelected?: boolean;
+    snapBack?: boolean;
+    /** Marks a project entry being dragged from archive/trash. Project rows
+     *  are grouping-shaped in `raw` so non-placement targets filter them out;
+     *  this flag lets placement targets opt in. */
+    kind?: "proj";
+    /** Text-color class for a dragged project row, so the drag pile matches the
+     *  source placement (archive = cyan, trash = gray) instead of a fixed hue. */
+    tone?: string;
   };
 
   export type InsertInfo = {
@@ -54,7 +62,7 @@
     {@const shrink = target?.shrink ?? false}
     {@const w = !target || shrink || target.pileWidth == null ? pile.width : target.pileWidth}
     {@const width = w - paddingX * 2}
-    {@const { raw, isSelected } = item}
+    {@const { raw, isSelected, kind, tone } = item}
     {@const overlap = index === 1 ? { x: 3, y: 3 } : index === 2 ? { x: 6, y: 6 } : null}
     {@const base = shrink
       ? {
@@ -92,7 +100,14 @@
         ]}
         style:width="{width}px"
       >
-        {#if isGroupingItem(raw)}
+        {#if kind === "proj" && isGroupingItem(raw)}
+          <div class={["flex h-8 items-center gap-2 px-2", tone ?? "text-cyan-600"]}>
+            <span class="icon-[ri--folder-fill] size-4 shrink-0"></span>
+            <span class="flex-1 cursor-default select-none truncate text-sm font-medium">
+              {raw.label || "Untitled Project"}
+            </span>
+          </div>
+        {:else if isGroupingItem(raw)}
           <DormantInput
             disabled
             placeholder={placeholder.grouping.label}

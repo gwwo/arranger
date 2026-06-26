@@ -22,9 +22,10 @@
   let anchorLayoutRect: DOMRect | null = $state.raw(null);
   let popupHeight: number | null = $state(null);
 
-  let alignYAuto: "bottom" | "top" = "bottom";
+  let alignYAuto: "bottom" | "top" = $state("bottom");
 
   export const getCurrentArg = () => request;
+  export const getAlignY = () => alignYAuto;
   export const show = (arg: T) => {
     request = arg;
     anchorLayoutRect = getLayoutRect(arg.anchor);
@@ -43,21 +44,27 @@
   });
 
   const spacing = 4;
+
+  let alignYBest: "bottom" | "top" | null = $derived.by(() => {
+    if (alignY) return alignY;
+    if (anchorLayoutRect == null || popupHeight == null) return null;
+    const { top, bottom } = anchorLayoutRect;
+    const layoutVVHeight = document.documentElement.clientHeight;
+    const spaceAbove = top;
+    const spaceBelow = layoutVVHeight - bottom;
+    const fitsBelow = popupHeight + spacing <= spaceBelow;
+    const fitsAbove = popupHeight + spacing <= spaceAbove;
+    if (fitsBelow !== fitsAbove) return fitsBelow ? "bottom" : "top";
+    return null;
+  });
+
+  $effect(() => {
+    if (alignYBest !== null) alignYAuto = alignYBest;
+  });
+
   let translateY: string | null = $derived.by(() => {
     if (anchorLayoutRect == null || popupHeight == null) return null;
     const { top, bottom } = anchorLayoutRect;
-
-    if (alignY) {
-      alignYAuto = alignY;
-    } else {
-      const layoutVVHeight = document.documentElement.clientHeight;
-      const spaceAbove = top;
-      const spaceBelow = layoutVVHeight - bottom;
-      const fitsBelow = popupHeight + spacing <= spaceBelow;
-      const fitsAbove = popupHeight + spacing <= spaceAbove;
-      if (fitsBelow !== fitsAbove) alignYAuto = fitsBelow ? "bottom" : "top";
-    }
-
     return `${alignYAuto === "bottom" ? bottom + spacing : top - popupHeight - spacing}px`;
   });
 

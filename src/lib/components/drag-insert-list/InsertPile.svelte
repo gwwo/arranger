@@ -27,6 +27,7 @@
     toComponentId: string;
     move: () => void;
     info: TInfo;
+    snapBackIds?: ReadonlySet<string>;
   }>;
 
   export type Inserter<TItem, TInsertInfo, TTargetInfo> = {
@@ -45,7 +46,7 @@
   import { tick, untrack, type Snippet } from "svelte";
 </script>
 
-<script lang="ts" generics="ItemInsert extends {id: string}, InsertInfo, TargetInfo">
+<script lang="ts" generics="ItemInsert extends {id: string; snapBack?: boolean}, InsertInfo, TargetInfo">
   import { fly } from "svelte/transition";
   import { clampSoft, crossfade, type CrossfadeTransition } from "./utils";
   import { isChromium, isSafari } from "$lib/utils/dom";
@@ -68,7 +69,7 @@
   let { row, children, setInserter, pileRenderOffset = { x: 0, y: 0 } }: Props = $props();
 
   const [send, receive] = crossfade({
-    duration: (d) => Math.max((400 * d) / (d + 100), 200),
+    duration: (d) => Math.max((300 * d) / (d + 100), 200),
   });
 
   const slideTo = (
@@ -259,7 +260,8 @@
         out:send|global={{
           // ensure that when defaultToComponentId is nullible, it doesn't read insertion.fromComponentId,
           // as it would be undefined after out triggered by `{#if insertion}`
-          key: `${target?.toComponentId ?? defaultToComponentId}//${item.id}`,
+          // items that snap back (either flagged at source or rejected by the target) always go home
+          key: `${(item.snapBack || target?.snapBackIds?.has(item.id)) ? defaultToComponentId : (target?.toComponentId ?? defaultToComponentId)}//${item.id}`,
         }}
         class="absolute h-fit w-full"
       >

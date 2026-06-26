@@ -31,12 +31,13 @@
 
   type Props = {
     side?: Snippet<[topBarHeight: number, bottomBarHeight: number]>;
-    main?: Snippet<[topBarHeight: number, bottomBarHeight: number]>;
+    main?: Snippet<[topBarHeight: number, bottomBarHeight: number, sideReveal: number, resizingSide: boolean]>;
     top?: Snippet<[resizingSide: boolean, sideReveal: number]>;
     layout: ReadonlyDeep<PanelLayout>;
+    panelFocused?: boolean;
   };
 
-  let { side, main, top, layout: layoutSource }: Props = $props();
+  let { side, main, top, layout: layoutSource, panelFocused = false }: Props = $props();
 
   const layout = $state(
     untrack(() => {
@@ -65,6 +66,12 @@
   let resizingMain = $state(false);
   let resizing = $derived(resizingSide || resizingMain);
   let adjustingSpacer = $state(false);
+
+  // 0 when the side bar is fully hidden, 1 once it reaches its content width.
+  // Tracks the live drag, so consumers can mirror the navbar switcher's reveal.
+  let sideReveal = $derived(
+    layout.sideWidth == null ? 0 : clamp(layout.sideWidthRaw / MIN_SIDE_WIDTH, 0, 1),
+  );
 
   let sideTransition: symbol | null = $state(null);
 
@@ -273,28 +280,26 @@
 >
   <div
     class={[
-      "flex overflow-hidden rounded-2xl border border-teal-500 shadow-2xl",
-      !resizing && "transition-transform duration-200 ease-linear",
+      "flex overflow-hidden rounded-2xl border shadow-2xl transition-[border-color] duration-200",
+      !resizing && "transition-[transform,height] duration-200 ease-linear",
       resizing && "select-none",
+      panelFocused ? "border-teal-600" : "border-teal-300",
     ]}
     style:height="{layout.height}px"
     style:transform="translate({panelTranslateX ?? 0}px, {panelTranslateY ?? 0}px)"
   >
     {#if top != null}
       <div
-        class="absolute inset-x-0 top-0 z-1 w-full overflow-hidden"
+        class="absolute inset-x-0 top-0 z-20 w-full overflow-hidden"
         style:height="{topBarHeight}px"
       >
-        {@render top(
-          resizingSide,
-          layout.sideWidth == null ? 0 : clamp(layout.sideWidthRaw / MIN_SIDE_WIDTH, 0, 1),
-        )}
+        {@render top(resizingSide, sideReveal)}
       </div>
     {/if}
     <div
       class={["relative box-border h-full flex-none overflow-hidden"]}
       style:width="{layout.sideWidthRaw}px"
-      style:transition={!resizing ? `width ${SIDE_TRANSITION_MS}ms ease` : ""}
+      style:transition={!resizing ? `width ${SIDE_TRANSITION_MS}ms linear` : ""}
       ontransitionend={(ev) => {
         if (ev.target !== ev.currentTarget) return;
         if (ev.propertyName !== "width") return;
@@ -309,8 +314,8 @@
       <div class="absolute inset-y-0 right-0 z-10 w-px bg-gray-200"></div>
     </div>
 
-    <div class="relative flex h-full flex-none" style:width="{layout.mainWidth}px">
-      {@render main?.(topBarHeight, bottomBarHeight)}
+    <div class={["relative flex h-full flex-none", !resizing && "transition-[width] duration-200 ease-linear"]} style:width="{layout.mainWidth}px">
+      {@render main?.(topBarHeight, bottomBarHeight, sideReveal, resizingSide)}
       <!-- `overflow-hidden` here is important for avoiding Safari's quirks on transform with a overlay-->
       <!-- if you absolutely position this side pane slider at the left, in safari,
      it will cause a shift on the previously inserted row when inserting a new row abvove it from another list-->

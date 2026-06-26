@@ -40,6 +40,21 @@
     expanded = false;
   };
 
+  // A single-line <input> silently strips newlines from pasted text before the
+  // bound value updates, so a multi-line paste would reach the consumer as one
+  // line. Read the raw clipboard text ourselves and feed it through `text` (with
+  // newlines intact) so setters that split on newlines see every line. Plain
+  // single-line pastes fall through to the native insert-at-caret behaviour.
+  const onpaste = (ev: ClipboardEvent) => {
+    const pasted = ev.clipboardData?.getData("text/plain");
+    if (pasted == null || !/[\r\n]/.test(pasted)) return;
+    ev.preventDefault();
+    const el = ev.currentTarget as HTMLInputElement;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    text = el.value.slice(0, start) + pasted + el.value.slice(end);
+  };
+
   import { cubicOut } from "svelte/easing";
 
   const duration = 350;
@@ -97,8 +112,9 @@
       bind:this={inputBar}
       type="text"
       {placeholder}
+      {onpaste}
       bind:value={text}
-      class="h-7 w-30 py-2 placeholder:text-gray-400 focus:outline-none"
+      class="h-7 w-30 py-2 text-[15px] placeholder:text-gray-400 focus:outline-none"
     />
   {/if}
 </div>

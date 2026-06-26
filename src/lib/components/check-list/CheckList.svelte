@@ -10,6 +10,10 @@
   export type CheckToFocus = Readonly<{
     index: number;
     moveTo?: { preferredX?: number; near: "top" | "bottom" };
+    // Focus the check without scrolling the caret into view — used for the
+    // checklist Inputbar handoff, where the scroll would otherwise yank the
+    // viewport as the new check slides in.
+    noScroll?: boolean;
   }>;
 
   import {
@@ -18,6 +22,7 @@
     useMoveCheck,
     useEditCheck,
   } from "$lib/client/mutate-remote";
+  import type { CheckItem, CheckInitData } from "$lib";
 
   const useMutator = () => ({
     createCheck: useCreateCheck(),
@@ -25,12 +30,17 @@
     deleteCheck: useDeleteCheck(),
     editCheck: useEditCheck(),
   });
-  type Mutator = ReturnType<typeof useMutator>;
+  type Mutator = {
+    createCheck?: (checks: CheckInitData[], index: number) => void | Promise<void>;
+    moveCheck?: (checkIds: string[], index: number) => void;
+    deleteCheck?: (checkId: string) => void;
+    editCheck?: (checkId: string, data: Partial<Omit<CheckItem, "id">>) => void;
+  };
 </script>
 
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
-  import { Input, newCheckItem, type CheckItem } from "$lib";
+  import { Input, newCheckItem } from "$lib";
   import Tickbox from "./Tickbox.svelte";
   import DragList, { type DragPrep, type TargetPrep } from "../drag-insert-list/DragList.svelte";
   import { createBulletHandler } from "./bulletHandler";
@@ -48,16 +58,17 @@
       ev: KeyboardEvent,
     ) => void;
     checkToFocus: CheckToFocus | null;
-    mut?: Mutator;
+    onEscape?: () => void;
+    mut?: Mutator | null;
   };
 
-  let { data, onNavigateOut, checkToFocus, class: className, mut = useMutator() }: Props = $props();
+  let { data, onNavigateOut, checkToFocus, onEscape, class: className, mut = useMutator() }: Props = $props();
 
   let inputEl: Record<string, Input | undefined | null> = $state({});
 
   const addBulletAt = (index: number, ...textsToAdd: string[]) => {
     const checks = textsToAdd.map((text) => ({ text }));
-    mut.createCheck(checks, index);
+    mut?.createCheck?.(checks, index);
   };
 
   export function getBulletInput(key: { index?: number; id?: string }): Input | undefined {
@@ -71,11 +82,11 @@
 
   $effect(() => {
     if (checkToFocus == null) return;
-    const { index, moveTo } = checkToFocus;
+    const { index, moveTo, noScroll } = checkToFocus;
     untrack(() => {
       const inputToFocus = getBulletInput({ index });
       if (moveTo == null) {
-        inputToFocus?.setCaretPosition("end");
+        inputToFocus?.setCaretPosition("end", { noScroll });
       } else {
         inputToFocus?.moveCaretToX(moveTo.preferredX, moveTo.near);
       }
@@ -87,7 +98,8 @@
   const { handlePaste, handleKeyDown, handleNavigate } = createBulletHandler({
     getBulletInput,
     addBulletAt,
-    deleteBulletAt: (index) => mut.deleteCheck(data[index].id),
+    deleteBulletAt: (index) => mut?.deleteCheck?.(data[index].id),
+    editBulletText: (index, text) => mut?.editCheck?.(data[index].id, { text }),
     getBullet: (index) => data[index] ?? undefined,
   });
 
@@ -98,7 +110,7 @@
     insertion: Insertion<ItemInsert, InsertInfo>,
   ): TargetPrep<TargetInfo> => {
     const checkIds = insertion.items.map(({ id }) => id);
-    return { move: () => mut.moveCheck(checkIds, index), info: null };
+    return { move: () => mut?.moveCheck?.(checkIds, index), info: null };
   };
 
   const getBorderStyle = (
@@ -220,7 +232,7 @@
           class="size-full shrink-0"
           bind:ticked={
             () => item.ticked,
-            (v) => (v !== item.ticked ? mut.editCheck(item.id, { ticked: v }) : null)
+            (v) => (v !== item.ticked ? mut?.editCheck?.(item.id, { ticked: v }) : null)
           }
         ></Tickbox>
       </div>
@@ -232,13 +244,14 @@
         ]}
         bind:this={inputEl[id]}
         bind:value={
-          () => item.text, (v) => (v !== item.text ? mut.editCheck(item.id, { text: v }) : null)
+          () => item.text, (v) => (v !== item.text ? mut?.editCheck?.(item.id, { text: v }) : null)
         }
+        disabled={mut == null || mut.editCheck == null}
         onNavigateOut={(...args) => {
           const handled = handleNavigate(index, total, ...args);
           if (!handled) onNavigateOut?.(...args);
         }}
-        onkeydown={(ev) => handleKeyDown(item, index, total, ev)}
+        onkeydown={(ev) => { handleKeyDown(item, index, total, ev); if (ev.key === "Escape") onEscape?.(); }}
         onpaste={(ev) => handlePaste(item, index, ev)}
         onfocus={() => (selected = {})}
       ></Input>

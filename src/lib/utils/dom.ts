@@ -16,6 +16,31 @@ export function detectHoverOnce(
   };
 }
 
+// Hold the scroll offsets of `el`'s ancestors (and the window) fixed for
+// `durationMs`, undoing any scroll the browser performs in that window. Focusing
+// an element + placing a caret makes the browser scroll that caret into view, and
+// `focus({preventScroll})` only covers the focus() call — the Selection change
+// scrolls too. Pinning across the slide-in animation keeps the viewport from
+// yanking when a freshly created check is focused. Self-stopping via rAF; only
+// the create-handoff opts in, so ordinary caret navigation still scrolls.
+export function pinScroll(el: HTMLElement, durationMs: number): void {
+  const nodes: Element[] = [];
+  for (let n: Element | null = el; n != null; n = n.parentElement) nodes.push(n);
+  const saved = nodes.map((n) => ({ top: n.scrollTop, left: n.scrollLeft }));
+  const winTop = window.scrollY;
+  const winLeft = window.scrollX;
+  const deadline = performance.now() + durationMs;
+  const restore = () => {
+    nodes.forEach((n, i) => {
+      if (n.scrollTop !== saved[i].top) n.scrollTop = saved[i].top;
+      if (n.scrollLeft !== saved[i].left) n.scrollLeft = saved[i].left;
+    });
+    if (window.scrollY !== winTop || window.scrollX !== winLeft) window.scrollTo(winLeft, winTop);
+    if (performance.now() < deadline) requestAnimationFrame(restore);
+  };
+  restore();
+}
+
 export const isSafari =
   typeof navigator !== "undefined" &&
   /Safari/.test(navigator.userAgent) &&
@@ -73,7 +98,7 @@ export function scrollWithCallback(
 
 export const horizontalWheelHijack: Attachment<HTMLDivElement> = (node) => {
   let locked = false;
-  let unlockTimer: number | null = null;
+  let unlockTimer: ReturnType<typeof setTimeout> | null = null;
   const unlock = () => {
     locked = false;
     unlockTimer = null;

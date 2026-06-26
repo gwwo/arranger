@@ -1,11 +1,16 @@
 <script lang="ts" module>
   import { useCreateProject } from "$lib/client/mutate-remote";
-  import { useSetOperationInPanel, useSetProjInPanel } from "$lib/client/mutate-local";
+  import {
+    useOpenAccountPanel,
+    useSetOperationInPanel,
+    useSetProjInPanel,
+  } from "$lib/client/mutate-local";
 
   const useMutator = () => ({
     createProject: useCreateProject(),
     setProjInPanel: useSetProjInPanel(),
     setOperationInPanel: useSetOperationInPanel(),
+    openAccountPanel: useOpenAccountPanel(),
   });
   type Mutator = ReturnType<typeof useMutator>;
 </script>
@@ -14,6 +19,7 @@
   import type { ClassValue, HTMLAttributes } from "svelte/elements";
   import {
     isProjectInstance,
+    operationOf,
     newProjectInstance,
     newProjectItem,
     type Instance,
@@ -22,7 +28,8 @@
   } from "$lib";
   import ProjectList from "$lib/components/project-list/ProjectList.svelte";
   import OperationList from "./operation-list/OperationList.svelte";
-  import { getAppState } from "$lib/client/context";
+  import { getAppState, getPanelContext } from "$lib/client/context";
+  import { usePanelFocus } from "$lib/components/PanelGroup.svelte";
   type Props = {
     instance: Instance;
     bottomBarHeight: number;
@@ -45,9 +52,25 @@
     isProjectInstance(instance) ? { [instance.project.id]: true } : {},
   );
 
+  $effect(() => {
+    const id = isProjectInstance(instance) ? instance.project.id : null;
+    projsSelected = id !== null ? { [id]: true } : {};
+  });
+
+  const { panelId } = getPanelContext();
+  const panelFocus = usePanelFocus();
 
   const appState = getAppState();
-  let projects = $derived(appState.projects)
+  // Exclude projects only open from a placement view (not active list projects).
+  let projects = $derived(appState.projects.filter((p) => !appState.openProjPlacement.has(p.id)))
+
+  // A project drilled into from a placement view (archive/trash) should keep
+  // that view's operation-list row highlighted, mirroring the navbar switcher.
+  let operationShown = $derived(
+    (isProjectInstance(instance)
+      ? appState.openProjPlacement.get(instance.project.id)
+      : undefined) ?? operationOf(instance),
+  );
 
 
   const insertNew = async () => {
@@ -65,10 +88,11 @@
 <div
   class={["flex size-full flex-col bg-teal-100", className]}
   style:padding-top="{topBarHeight}px"
+  onpointerdown={() => panelFocus.setFocus(panelId, "side")}
 >
   <OperationList
     class="w-full flex-none px-2 pt-5 pb-4 text-sm"
-    operationShown={isProjectInstance(instance) ? null : instance}
+    {operationShown}
     showOperation={(op) => {
       mut.setOperationInPanel(op);
       projsSelected = {};
@@ -96,10 +120,12 @@
     </button>
     <div class="flex-1"></div>
     <button
-      class="flex h-7 flex-none items-center justify-center rounded-full border border-transparent px-2 hover:border-gray-300 active:bg-gray-300/20"
-      aria-label="go to settings"
+      class="flex h-7 flex-none text-gray-400 items-center justify-center rounded-full border border-transparent px-2 hover:border-gray-300 active:bg-gray-300/20"
+      aria-label="open account"
+      onpointerdown={(e) => e.stopPropagation()}
+      onclick={mut.openAccountPanel}
     >
-      <span class="icon-[basil--settings-adjust-outline] size-5"></span>
+      <span class="icon-[mdi--user] size-5"></span>
     </button>
   </div>
 </div>

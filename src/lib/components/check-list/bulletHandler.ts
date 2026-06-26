@@ -6,6 +6,7 @@ type BulletAccess = {
   getBulletInput: (c: { index?: number; id?: string }) => Input | undefined;
   addBulletAt: (index: number, ...texts: string[]) => void;
   deleteBulletAt: (index: number) => void;
+  editBulletText: (index: number, text: string) => void;
   getBullet: (index: number) => CheckItem | undefined;
 };
 
@@ -13,6 +14,7 @@ export function createBulletHandler({
   getBulletInput,
   addBulletAt,
   deleteBulletAt,
+  editBulletText,
   getBullet,
 }: BulletAccess) {
   async function handlePaste(bullet: CheckItem, index: number, ev: ClipboardEvent) {
@@ -31,6 +33,7 @@ export function createBulletHandler({
 
     const [firstL, ...restLs] = linesToAdd;
     bullet.text = beforeCaret + firstL;
+    editBulletText(index, beforeCaret + firstL);
 
     const lastLText = restLs.at(-1)!; // since lines.length >= 2
 
@@ -57,6 +60,7 @@ export function createBulletHandler({
       const afterCaret = text.substring(splitPoint);
 
       bullet.text = beforeCaret;
+      editBulletText(index, beforeCaret);
 
       addBulletAt(index + 1, afterCaret);
       await tick();
@@ -87,6 +91,7 @@ export function createBulletHandler({
       ev.preventDefault();
       const { text: preText } = preBullet;
       preBullet.text = preText + text;
+      editBulletText(index - 1, preText + text);
       deleteBulletAt(index);
       await tick();
       const inputToFocus = getBulletInput({ index: index - 1 });

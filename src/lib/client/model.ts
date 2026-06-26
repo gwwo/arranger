@@ -48,7 +48,7 @@ export type CheckInitData = Partial<Raw<CheckItem>>;
 
 export type ProjectInitData = Partial<Raw<ProjectItem>>;
 
-const newId = () => crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+const newId = () => crypto.randomUUID();
 
 export const newTodoItem = (data: TodoInitData = {}): TodoItem => {
   const { title, note, checks, status, planned } = data;
@@ -97,13 +97,53 @@ export type ProjectInstance = {
 
 type InstanceInitData = { project: ProjectItem } & Partial<ProjectInstance>;
 
-export type OperationInstance = "inbox" | "planned" | "archive" | "trash" | "search";
+// Placement views (inbox/archive/trash) carry per-panel row UI state, just like
+// a ProjectInstance — selecting/expanding in one panel must not bleed into
+// another panel showing the same placement, and the state dies with the
+// instance when the panel switches away or closes.
+export type PlacementName = "inbox" | "archive" | "trash";
 
-export type Instance = ProjectInstance | OperationInstance;
+// Operations with no per-row UI state; stored on a panel as bare strings.
+export type SimpleOperation = "planned" | "search" | "account";
+
+// The string identifier for a view a panel can show (used by the navbar /
+// switcher / sidebar menus). Distinct from the panel's stored instance, which
+// is an object for projects and placements.
+export type OperationInstance = PlacementName | SimpleOperation;
+
+export type PlacementInstance = {
+  readonly kind: PlacementName;
+  selected: Set<string>;
+  expandedId: string | null;
+};
+
+export type Instance = ProjectInstance | PlacementInstance | SimpleOperation;
 
 export const isProjectInstance = (inst: Instance): inst is ProjectInstance => {
-  return typeof inst === "object" && inst !== null;
+  return typeof inst === "object" && inst !== null && "project" in inst;
 };
+
+export const isPlacementInstance = (inst: Instance): inst is PlacementInstance => {
+  return typeof inst === "object" && inst !== null && "kind" in inst;
+};
+
+const placementNames = new Set<OperationInstance>(["inbox", "archive", "trash"]);
+
+export const isPlacementName = (op: OperationInstance): op is PlacementName =>
+  placementNames.has(op);
+
+// The view-selector string for a panel instance: a placement/simple-operation
+// name, or null for a project instance.
+export const operationOf = (inst: Instance): OperationInstance | null => {
+  if (isProjectInstance(inst)) return null;
+  return isPlacementInstance(inst) ? inst.kind : inst;
+};
+
+// Turn a menu selection (OperationInstance string) into a panel instance:
+// placements become fresh objects with their own UI state, simple operations
+// stay as strings.
+export const operationToInstance = (op: OperationInstance): PlacementInstance | SimpleOperation =>
+  isPlacementName(op) ? newPlacementInstance(op) : op;
 
 export type PanelItem = Item & {
   layout: PanelLayout;
@@ -119,17 +159,23 @@ export const newProjectInstance = (data: InstanceInitData): ProjectInstance => {
   };
 };
 
+export const newPlacementInstance = (
+  kind: PlacementName,
+  selected: Set<string> = new Set(),
+  expandedId: string | null = null,
+): PlacementInstance => ({ kind, selected, expandedId });
+
 export const newPanelItem = (data: {
   layout?: Partial<PanelLayout>;
-  instance: ProjectInstance | OperationInstance;
+  instance: Instance;
 }): PanelItem => {
   const { layout, instance } = data;
   const { mainWidth, height, sideWidth, spacerLeft, sideShow } = layout ?? {};
   return {
     id: newId(),
     layout: {
-      mainWidth: mainWidth ?? 400,
-      height: height ?? 650,
+      mainWidth: mainWidth ?? 450,
+      height: height ?? 680,
       sideShow: sideShow ?? false,
       sideWidth: sideWidth === undefined ? "disabled" : sideWidth,
       spacerLeft: spacerLeft === undefined ? 60 : spacerLeft,
@@ -143,13 +189,57 @@ export const placeholder: Readonly<{
   todo: Pick<TodoItem, "title" | "note">;
   grouping: Pick<GroupingItem, "label">;
 }> = {
-  project: { name: "New Project", note: "Notes" },
+  project: { name: "Some Project", note: "Notes" },
   todo: { title: "New To-Do", note: "Notes" },
   grouping: { label: "New Heading" },
 };
 
 
+// ─── Placement view entry types ───────────────────────────────────────────────
+
+export type ArchiveTodoEntry = {
+  kind: "todo";
+  id: string;
+  title: string;
+  note: string;
+  done: boolean;
+  planned: string | null;
+  projId: string | null;
+  checks?: CheckItem[];
+};
+
+export type ArchiveProjEntry = {
+  kind: "proj";
+  id: string;
+  name: string;
+};
+
+export type ArchiveEntry = ArchiveTodoEntry | ArchiveProjEntry;
+
 export type AppState = {
-  panels: PanelItem[],
-  projects: ProjectItem[]
+  panels: PanelItem[];
+  projects: ProjectItem[];
+  inbox: TodoItem[];
+  archive: ArchiveEntry[];
+  trash: ArchiveEntry[];
+  // Projects opened for editing from a placement view (archive/trash), mapped to
+  // the placement they came from. They live in `projects` (so the normal project
+  // view / mutators work against them) but are excluded from the active project
+  // list everywhere it surfaces (sidebar, switcher, project-list-order pushes)
+  // and preserved across syncs.
+  openProjPlacement: Map<string, "archive" | "trash">;
+  // Signed out there is no server to hold a project's rows while it sits in a
+  // placement view (archive/trash) — so this is the client-side stand-in: the
+  // full content of each archived/trashed project, keyed by id. A project is
+  // parked here when it leaves the active list (archive/trash) and pulled back
+  // out when reopened or restored, so its rows survive the round trip with no
+  // fetch. Empty when signed in, where the server is the backing store.
+  stashedProjects: Map<string, ProjectItem>;
+  // Lazy-load tracking. A project/placement is a "stub" when its list entry is
+  // known (name/order) but its content (rows / entries) hasn't been fetched yet.
+  // Only the scopes shown by the open panels are bootstrapped on the server; the
+  // rest start stubbed and are fetched on demand when a panel first shows them.
+  // Stub === true means "needs fetch"; absent/false means loaded.
+  projStub: Record<string, boolean>;
+  placementStub: Record<PlacementName, boolean>;
 }

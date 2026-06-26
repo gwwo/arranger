@@ -17,26 +17,98 @@
   } from "../todo-panel/TodoListInsert.svelte";
   import { type RowItem, isGroupingItem, placeholder, toLayoutPoint } from "$lib";
   import { useContextMenu } from "$lib";
+  import { rangeSelectIds } from "$lib/client/utils";
   import { type Insertable } from "../drag-insert-list/utils";
   import ReceiveList from "./ReceiveList.svelte";
 
-  import { type Insertion } from "../drag-insert-list/InsertPile.svelte";
+  import { type Insertion, type Inserter } from "../drag-insert-list/InsertPile.svelte";
   import {
-    useDeleteProject,
     useEditProject,
     useMoveProject,
     useMoveRow,
+    useMoveFromPlacementToProject,
+    useRestoreProjects,
+    useArchiveProject,
+    useTrashProject,
   } from "$lib/client/mutate-remote";
+
+  const placementSources = new Set(["inbox", "archive", "trash"]);
+
+  // Height of a sidebar project row (matches the h-[28px] row markup below).
+  const projectRowHeight = 28;
 
   const useMutator = () => {
     const moveRow = useMoveRow.dynamic();
+    const moveFromPlacement = useMoveFromPlacementToProject.dynamic();
     const editProj = useEditProject.dynamic();
     return {
       receiveRow: (fromProjId: string, rowIds: string[], toProjId: string) =>
         moveRow({ projId: toProjId }, fromProjId, rowIds),
+      receiveFromPlacement: (toProjId: string, todoIds: string[], index: number) =>
+        moveFromPlacement({ projId: toProjId }, todoIds, index),
       moveProject: useMoveProject(),
-      deleteProject: useDeleteProject(),
+      restoreProjects: useRestoreProjects(),
+      archiveProject: useArchiveProject(),
+      trashProject: useTrashProject(),
       editProjectName: (projId: string, name: string) => editProj({ projId }, { name }),
+    };
+  };
+
+  // Inserter passed to the list's DragList. It composes the project inserter
+  // (self-reorder of sidebar projects) with the todo inserter so an all-project
+  // drag coming from an operation view (inbox/archive/trash) drives the same
+  // reorder phantom — the drop then restores those projects into the list.
+  // Mixed/todo drags return no insertion here, so they stay on ReceiveList's
+  // receive path (Mode 1) and show no phantom.
+  const useReceivingProjectInserter = (): Inserter<ItemInsert, InsertInfo, TargetInfo> => {
+    const proj = useProjectListInserter();
+    const todo = useTodoListInserter();
+    const externalActive = () => {
+      if (proj.getInsertion()) return false;
+      const t = todo.getInsertion();
+      return !!t && t.items.length > 0 && t.items.every((it) => it.kind === "proj");
+    };
+    // The dragged pile comes from an operation view, where a project row is
+    // taller (h-8) than a sidebar list row (projectRowHeight). Re-pile the
+    // insertion at the sidebar row height so the phantom gap matches the row
+    // that lands in it — otherwise the following rows shift on drop. Memoized so
+    // the insertion identity stays stable across reads during the drag.
+    let extSource: ReturnType<typeof todo.getInsertion>;
+    let extWrapped: Insertion<ItemInsert, InsertInfo> | undefined;
+    return {
+      register: proj.register,
+      receive: proj.receive,
+      getPileComfinedOffsetTop: () =>
+        proj.getPileComfinedOffsetTop() ?? todo.getPileComfinedOffsetTop(),
+      getInsertion: () => {
+        const p = proj.getInsertion();
+        if (p) return p;
+        if (externalActive()) {
+          const t = todo.getInsertion()!;
+          if (t !== extSource) {
+            extSource = t;
+            extWrapped = {
+              ...t,
+              pile: { ...t.pile, height: projectRowHeight },
+            } as unknown as Insertion<ItemInsert, InsertInfo>;
+          }
+          return extWrapped;
+        }
+        extSource = undefined;
+        extWrapped = undefined;
+        return undefined;
+      },
+      setTarget: (t) => {
+        if (externalActive()) {
+          // Shrink the dragged pile to a chip while the phantom is active, like
+          // the receive case — the todo InsertPile reads info.shrink.
+          const todoTarget = t && { ...t, info: { shrink: true } };
+          todo.setTarget(todoTarget as unknown as Parameters<typeof todo.setTarget>[0]);
+        } else {
+          proj.setTarget(t);
+        }
+      },
+      getTarget: () => (externalActive() ? todo.getTarget() : proj.getTarget()),
     };
   };
 
@@ -72,10 +144,14 @@
     insertion: Insertion<ItemInsert, InsertInfo>,
   ): TargetPrep<TargetInfo> => {
     const projIds = insertion.items.map(({ id }) => id);
+    // Only the todo inserter carries `info.fromProjId`; its presence marks an
+    // external all-project drag from an operation view → restore, not reorder.
+    const external = (insertion.info as { fromProjId?: string } | null)?.fromProjId != null;
     const move = () => {
-      mut.moveProject(projIds, index);
+      if (external) mut.restoreProjects(projIds, index);
+      else mut.moveProject(projIds, index);
     };
-    return { move, info: null };
+    return { move, info: {} };
   };
 
   const getBorderStyle = (
@@ -117,16 +193,36 @@
 
       const handleMouseDown = (ev: MouseEvent) => {
         const selectDuo = ev.metaKey || ev.ctrlKey;
+        const selectRange = ev.shiftKey;
         const alreadySelected = selected[anchor.id];
         const selectedIds = dataToRender.flatMap(({ id }) => (selected[id] ? [id] : []));
         const soloSelected = selectedIds.length === 1 && selectedIds[0] === anchor.id;
+
+        // The shown project row is always treated as selected (highlighted), so
+        // it acts as a range anchor and must survive a shift-click range that
+        // lands entirely before it — re-add it when it falls outside the range.
+        const rangeIds = selectRange
+          ? (() => {
+              const range = rangeSelectIds(
+                dataToRender.map(({ id }) => id),
+                anchor.id,
+                (id) => !!selected[id] || id === projIdShown,
+              );
+              return projIdShown != null && !range.includes(projIdShown)
+                ? [...range, projIdShown]
+                : range;
+            })()
+          : null;
 
         const isRemoving = selectDuo && alreadySelected;
         const isAdding = selectDuo && !alreadySelected;
         const isReplacing = !selectDuo;
 
-        pendingClick =
-          isRemoving && soloSelected
+        pendingClick = rangeIds
+          ? () => {
+              selected = Object.fromEntries(rangeIds.map((id) => [id, true]));
+            }
+          : isRemoving && soloSelected
             ? null
             : () => {
                 if (isRemoving) {
@@ -138,18 +234,23 @@
                   return;
                 }
                 if (isReplacing) selected = { [anchor.id]: true };
-                if (isAdding) selected[anchor.id] = true;
+                if (isAdding) {
+                  selected[anchor.id] = true;
+                  return;
+                }
                 showProject(anchor);
               };
 
-        const dataForDrag = alreadySelected
-          ? dataToRender.filter(({ id }) => selected[id])
-          : [anchor];
+        const dataForDrag = rangeIds
+          ? dataToRender.filter(({ id }) => rangeIds.includes(id))
+          : alreadySelected
+            ? dataToRender.filter(({ id }) => selected[id])
+            : [anchor];
 
         const items: ItemInsert[] = dataForDrag.map((raw) => ({
           raw,
           id: raw.id,
-          isSelected: alreadySelected,
+          isSelected: rangeIds != null || alreadySelected,
           isShown: raw.id === projIdShown,
         }));
 
@@ -183,12 +284,23 @@
       spaceFollow: i < len ? getMarginTop(first, toRender[i]) : 0,
     }));
     const heights: Map<string, number> = new Map();
-    for (const { id } of toRender) heights.set(id, 28);
+    for (const { id } of toRender) heights.set(id, projectRowHeight);
     return { insertables, heights };
   }
 
   const receiveItems = (item: ProjectItem, fromListId: string, itemIdsToReceive: string[]) => {
-    mut.receiveRow(fromListId, itemIdsToReceive, item.id);
+    if (placementSources.has(fromListId)) {
+      // From inbox/archive/trash: pull the todos into this project. Insert before
+      // the first grouping (or at the end) — same default as a project→project
+      // drop (useMoveRow). The server's full fetch always lists todos before
+      // groups, so appending at the absolute array end would render below the
+      // groupings locally and then jump up on reload.
+      const firstGroupIdx = item.rows.findIndex((row) => isGroupingItem(row));
+      const index = firstGroupIdx >= 0 ? firstGroupIdx : item.rows.length;
+      mut.receiveFromPlacement(item.id, itemIdsToReceive, index);
+    } else {
+      mut.receiveRow(fromListId, itemIdsToReceive, item.id);
+    }
   };
 
   const openContextMenu = (ev: MouseEvent, item: ProjectItem) => {
@@ -199,7 +311,7 @@
     }
     const ids = data.flatMap(({ id }) => (selected[id] ? [id] : []));
     const { x: layoutX, y: layoutY } = toLayoutPoint(ev.clientX, ev.clientY);
-    const menuWidth = 160;
+    const menuWidth = 224;
     const menuHeight = 48;
     const margin = 8;
     const viewportWidth = document.documentElement.clientWidth;
@@ -213,13 +325,17 @@
       y,
       count: ids.length,
       itemLabel: "project",
+      secondaryAction: {
+        label: ids.length === 1 ? "Archive project" : `Archive ${ids.length} projects`,
+        onAction: () => {
+          for (const id of ids) mut.archiveProject(id);
+          ids.forEach((id) => delete selected[id]);
+        },
+      },
+      deleteLabel: ids.length === 1 ? "Move project to trash" : `Move ${ids.length} projects to trash`,
       onDelete: () => {
-        const idsToDelete = new Set(ids);
-        mut.deleteProject(idsToDelete).then(() => {
-          Object.keys(selected).forEach((id) => {
-            if (idsToDelete.has(id)) delete selected[id];
-          });
-        });
+        for (const id of ids) mut.trashProject(id);
+        ids.forEach((id) => delete selected[id]);
       },
     });
   };
@@ -227,14 +343,15 @@
 
 <ReceiveList
   class={["overflow-x-hidden overflow-y-auto", className]}
-  useInserter={useProjectListInserter}
+  useInserter={useReceivingProjectInserter}
   useReceiveInserter={useTodoListInserter}
-  allowInsert="self"
+  allowInsert="all"
   transitionRearrange="internal-guesture"
   {getMarginTop}
   {onInsertActive}
   {onInsertTargeted}
   {receiveItems}
+  receivable={(it: TodoItemInsert) => it.kind !== "proj"}
   {data}
 >
   {#snippet phantom()}

@@ -54,6 +54,25 @@
     class?: string | (string | false | undefined)[];
     useInserter: () => Inserter<ItemInsert, InsertInfo, TargetInfo>;
     phantomHeight?: "first" | "maximum";
+    /** Promote the (constant-size) content to its own compositor layer. Use when
+     *  an animated layout above this list repositions it, so the rows glide via
+     *  the compositor instead of re-rasterizing their text each frame. */
+    compositeContent?: boolean;
+    /** When a drag that started in ANOTHER list carries rows that also live in
+     *  this one (the same placement open in another panel — all sharing one
+     *  `data`), keep those rows rendered in place instead of dropping them the
+     *  instant the drag starts. They disappear only when the drop actually moves
+     *  them (the mutation removes them from `data`). The originating list still
+     *  lifts its own rows out, so the drag still reads as picking rows up there.
+     *  Use for operation pages (inbox/archive/trash), where a same-page drag is a
+     *  no-op so a mirror panel has nothing to preview. Leave off for project
+     *  pages, where lifting the dragged rows out of every instance is intended. */
+    keepDraggedRows?: boolean;
+    /** Extra condition that keeps edge auto-scroll active beyond this list's own
+     *  reorder insertion. ReceiveList passes its receive-drag state so a drag
+     *  that only drops rows in (no reorder phantom in this list) still scrolls
+     *  when hovering near the top/bottom edges. */
+    scrollActive?: () => boolean;
   } & SvelteHTMLElements["div"];
 </script>
 
@@ -85,6 +104,9 @@
     useInserter,
     onInsertTargeted,
     phantomHeight = "first",
+    compositeContent = false,
+    keepDraggedRows = false,
+    scrollActive,
     ...restProps
   }: Props<Item, ItemInsert, InsertInfo, TargetInfo> = $props();
   const componentID = $props.id();
@@ -129,7 +151,11 @@
   // mutate instantInro and instantReorder only in here
   if (transRearrange === "internal-guesture") {
     $effect.pre(() => {
-      if (insertion?.fromComponentId === componentID) {
+      // Smooth-rearrange for any insertion this list accepts — for allowInsert
+      // "self" that's only its own drag (insertion is already filtered to it),
+      // and for "all" it also covers an external drag driving the phantom (e.g.
+      // restoring projects into the sidebar list).
+      if (insertion != null) {
         enableTransRearrange = true;
       }
       if (insertion == null) {
@@ -198,7 +224,9 @@
   });
 
   // auto scroll keeps firing when h-auto?
-  const provider = useInsertListYProvider(() => insertion != undefined);
+  const provider = useInsertListYProvider(
+    () => insertion != undefined || (scrollActive?.() ?? false),
+  );
 
   // only keep the elements of `itemsToRender` that are within a 30-count radius of
   // the element with item.id === anchorId; and the first 30-count of elements
@@ -291,6 +319,20 @@
     );
 
     const { insertables, heights } = onInsertActive(items, toRender, toDerender);
+
+    // keepDraggedRows: when a drag that started in ANOTHER list carries rows that
+    // also live here (the same placement open in another panel), leave them
+    // static (full `data`, no insert previews) until the drop moves them out of
+    // `data`. The originating list still lifts its rows out normally, so the drag
+    // reads as picking rows up there; mirror panels just hold steady. (toDerender
+    // is non-empty only when some dragged item currently lives in this list.)
+    if (
+      keepDraggedRows &&
+      toDerender.length > 0 &&
+      insertion.fromComponentId !== componentID
+    ) {
+      return [data, null];
+    }
 
     const previews: (InsertPreview & { index: number })[] = [];
 
@@ -393,13 +435,22 @@
   style:padding-bottom="0"
 >
   <!-- use flex to make the margin-top not cascading -->
-  <div bind:this={contentEl} class="relative flex h-fit w-full flex-col">
+  <div
+    bind:this={contentEl}
+    class="relative flex h-fit w-full flex-col"
+    style:transform={compositeContent ? "translateZ(0)" : null}
+  >
     {#if phantomInsert != undefined && insertion != undefined}
-      <!-- using transition:scale={{ duration: 200, start: 0.5 }} 
+      <!-- using transition:scale={{ duration: 200, start: 0.5 }}
      will mess up translateY transition in safari; so go back to transition style:top -->
       <!-- positioned against panel, so that margin collapsing of the first item will be accounted for. -->
+      <!-- in: only (no outro): this is an absolute element, so when it sits at the
+       last insert position (content bottom) an outro would keep extending the
+       scroll height for the animation's duration, after the bottom spacer has
+       already collapsed — making the scroll position jump twice. Removing it on
+       exit collapses the scroll height in one step, in sync with the spacer. -->
       <div
-        transition:scale={{ duration: 200, start: 0.5 }}
+        in:scale={{ duration: 200, start: 0.5 }}
         class="pointer-events-none absolute top-0 left-[50%] w-full duration-100"
         style:height="{insertion.pile.height}px"
         style:top="{phantomInsert.insertTop}px"

@@ -1,4 +1,4 @@
-import { getToday } from "$lib/components/calendar/utils";
+import { CalendarDate } from "@internationalized/date";
 import {
   newCheckItem,
   newGroupingItem,
@@ -10,52 +10,74 @@ import {
   type ProjectItem,
 } from "./model";
 
-export const mockProjects: ProjectItem[] = [
+export const freshMockProjects = (): ProjectItem[] => [
   newProjectItem({
-    name: "Progress Tracker",
-    note: "Arranger dev progress",
+    name: "Click Here & Drag There",
+    note: "Things you can try 🎉",
     rows: [
-      newGroupingItem({ label: "UI" }),
-      newTodoItem({ title: "infinite-scroll calendar", status: "complete" }),
-      newTodoItem({ title: "natural language date parser", status: "complete" }),
-      newTodoItem({ title: "drag and drop", status: "complete" }),
-      newTodoItem({ title: "multi-panel layout", status: "complete" }),
-      newTodoItem({ title: "project view", status: "complete" }),
-      newTodoItem({ title: "todo view", status: "complete" }),
-      newTodoItem({ title: "row operations", status: "complete" }),
       newTodoItem({
-        title: "functional views",
-        note: "shells exist; need type design and live data post-sync",
+        title: "Expand, collapse, adjust the side bar",
+        note: "which is only enabled on the first panel; click the hover-to-appear drag handle to toggle visibility",
       }),
-      newTodoItem({ title: "refined todo view" }),
-      newTodoItem({ title: "in-panel page navigation" }),
-      newTodoItem({ title: "auth/account pages" }),
-      newTodoItem({ title: "sync indicator and error log page" }),
-      newTodoItem({ title: "basic keyboard support" }),
-
-      newGroupingItem({ label: "Client" }),
-      newTodoItem({ title: "unified mutator layer", status: "complete" }),
-      newTodoItem({ title: "sync protocol schemas", status: "complete" }),
-      newTodoItem({ title: "mutation overlay" }),
-      newTodoItem({ title: "sync engine" }),
-      newTodoItem({ title: "undo/redo for moves" }),
-
-      newGroupingItem({ label: "Server" }),
-      newTodoItem({ title: "database schema", status: "complete" }),
-      newTodoItem({ title: "auth setup", status: "complete" }),
+      newGroupingItem({ label: "Double-click a heading to edit" }),
       newTodoItem({
-        title: "auth routes",
+        title: "Double-click a todo to expand",
+        note: "click on the top or bottom margin to collapse it",
+        checks: [
+          newCheckItem({ text: "Each todo can have its own checklist" }),
+          newCheckItem({ text: "Checks are reorderable by dragging the right-top handle" }),
+          newCheckItem({
+            text: "Use `delete` and `return` keys to intuitively split, merge, create, or delete checks",
+          }),
+        ],
+      }),
+      newTodoItem({ title: "Double-click a project row at the sidebar to edit" }),
+      newGroupingItem({ label: "Drag things" }),
+      newTodoItem({ title: "Drag to adjust the side bar" }),
+      newTodoItem({
+        title: "Drag multiple rows from a project",
+        note: "drop them into a target project at the side bar or at another panel",
+        checks: [
+          newCheckItem({
+            text: "Or drop todos into Archive (only completed todos), Trash, or Inbox",
+          }),
+          newCheckItem({ text: "Or just reorder them" }),
+        ],
       }),
       newTodoItem({
-        title: "pull endpoint",
+        title: "Drag multiple project rows from the side bar",
+        checks: [
+          newCheckItem({ text: "Reorder them" }),
+          newCheckItem({ text: "Move them to Trash or Archive" }),
+        ],
+      }),
+      newTodoItem({ title: "Resize panels and adjust spacings" }),
+      newGroupingItem({ label: "Use keyboard" }),
+      newTodoItem({
+        title: "Cmd/Ctrl-click on rows to multi-select",
+        checks: [
+          newCheckItem({ text: "Shift-click to select a range of rows" }),
+          newCheckItem({ text: "Cmd/Ctrl + A to select all rows under a heading or in a project" }),
+        ],
       }),
       newTodoItem({
-        title: "push endpoint",
+        title: "Arrow up/down key to navigate row-selection",
+        note: "use Arrow left/right key to switch focus between panels",
       }),
-      newGroupingItem({ label: "Someday" }),
-      newTodoItem({ title: "search view and server logic" }),
-      newTodoItem({ title: "project export" }),
-      newTodoItem({ title: "end-to-end encryption" }),
+      newTodoItem({ title: "Space key to create a todo" }),
+      newTodoItem({
+        title: "Enter key to expand a todo",
+        note: "and to collapse it when focused on the title; also can use Escape key to collapse the todo",
+      }),
+      newTodoItem({
+        title: "Delete key to move todos to Trash",
+        note: "and delete headings",
+      }),
+      newGroupingItem({ label: "More" }),
+      newTodoItem({
+        title: "Sign up an account to persist your data",
+        note: "and layout preference",
+      }),
     ],
   }),
   newProjectItem({
@@ -66,6 +88,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "1. George Washington",
         note: "1789–1797 · Set two-term precedent, commanded Revolutionary forces",
+        planned: new CalendarDate(1732, 2, 22),
         status: "complete",
         checks: [
           newCheckItem({ text: "Commanded Continental Army", ticked: true }),
@@ -76,6 +99,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "2. John Adams",
         note: "1797–1801 · First to live in the White House; avoided war with France",
+        planned: new CalendarDate(1735, 10, 30),
         status: "complete",
         checks: [
           newCheckItem({ text: "Signed Alien & Sedition Acts", ticked: true }),
@@ -85,6 +109,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "3. Thomas Jefferson",
         note: "1801–1809 · Author of Declaration of Independence; Louisiana Purchase doubled US territory",
+        planned: new CalendarDate(1743, 4, 13),
         status: "complete",
         checks: [
           newCheckItem({ text: "Authored Declaration of Independence", ticked: true }),
@@ -95,6 +120,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "4. James Madison",
         note: "1809–1817 · Father of the Constitution; led US through War of 1812",
+        planned: new CalendarDate(1751, 3, 16),
         status: "complete",
         checks: [
           newCheckItem({ text: "Drafted US Constitution", ticked: true }),
@@ -105,6 +131,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "5. James Monroe",
         note: "1817–1825 · Era of Good Feelings; Monroe Doctrine warned Europe off Americas",
+        planned: new CalendarDate(1758, 4, 28),
         status: "complete",
         checks: [
           newCheckItem({ text: "Monroe Doctrine (1823)", ticked: true }),
@@ -115,6 +142,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "6. John Quincy Adams",
         note: "1825–1829 · Son of #2; strong advocate for internal improvements and science",
+        planned: new CalendarDate(1767, 7, 11),
         status: "complete",
         checks: [
           newCheckItem({ text: "Promoted national university and observatory", ticked: true }),
@@ -124,6 +152,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "7. Andrew Jackson",
         note: "1829–1837 · Populist hero; Indian Removal Act displaced thousands",
+        planned: new CalendarDate(1767, 3, 15),
         status: "complete",
         checks: [
           newCheckItem({ text: "Indian Removal Act (1830)", ticked: true }),
@@ -134,6 +163,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "8. Martin Van Buren",
         note: "1837–1841 · Panic of 1837 defined his term; founded Democratic Party machinery",
+        planned: new CalendarDate(1782, 12, 5),
         status: "complete",
         checks: [
           newCheckItem({ text: "Panic of 1837 financial crisis", ticked: true }),
@@ -143,6 +173,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "9. William Henry Harrison",
         note: "1841 · Shortest presidency — died of pneumonia 31 days after inauguration",
+        planned: new CalendarDate(1773, 2, 9),
         status: "complete",
         checks: [
           newCheckItem({ text: "Longest inaugural address in history", ticked: true }),
@@ -152,6 +183,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "10. John Tyler",
         note: "1841–1845 · First VP to assume presidency; expelled from his own party",
+        planned: new CalendarDate(1790, 3, 29),
         status: "complete",
         checks: [
           newCheckItem({ text: "Annexed Texas", ticked: true }),
@@ -161,6 +193,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "11. James K. Polk",
         note: "1845–1849 · Expanded US by a third via Mexican-American War and Oregon Treaty",
+        planned: new CalendarDate(1795, 11, 2),
         status: "complete",
         checks: [
           newCheckItem({ text: "Oregon Territory secured from Britain", ticked: true }),
@@ -171,6 +204,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "12. Zachary Taylor",
         note: "1849–1850 · War hero who died 16 months in; opposed spread of slavery",
+        planned: new CalendarDate(1784, 11, 24),
         status: "complete",
         checks: [
           newCheckItem({ text: "Hero of Mexican-American War", ticked: true }),
@@ -180,6 +214,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "13. Millard Fillmore",
         note: "1850–1853 · Signed Compromise of 1850 including Fugitive Slave Act",
+        planned: new CalendarDate(1800, 1, 7),
         status: "complete",
         checks: [
           newCheckItem({ text: "Signed Compromise of 1850", ticked: true }),
@@ -189,6 +224,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "14. Franklin Pierce",
         note: "1853–1857 · Kansas-Nebraska Act inflamed sectional tensions over slavery",
+        planned: new CalendarDate(1804, 11, 23),
         status: "complete",
         checks: [
           newCheckItem({ text: "Kansas-Nebraska Act (1854)", ticked: true }),
@@ -198,6 +234,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "15. James Buchanan",
         note: "1857–1861 · Widely considered worst president; failed to prevent secession",
+        planned: new CalendarDate(1791, 4, 23),
         status: "complete",
         checks: [
           newCheckItem({ text: "Dred Scott decision on his watch", ticked: true }),
@@ -207,6 +244,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "16. Abraham Lincoln",
         note: "1861–1865 · Preserved the Union; issued Emancipation Proclamation; assassinated",
+        planned: new CalendarDate(1809, 2, 12),
         status: "complete",
         checks: [
           newCheckItem({ text: "Led Union through Civil War", ticked: true }),
@@ -217,6 +255,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "17. Andrew Johnson",
         note: "1865–1869 · Lenient Reconstruction plan; first president impeached by the House",
+        planned: new CalendarDate(1808, 12, 29),
         status: "complete",
         checks: [
           newCheckItem({ text: "Purchased Alaska from Russia", ticked: true }),
@@ -226,6 +265,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "18. Ulysses S. Grant",
         note: "1869–1877 · Civil War hero; administration marred by widespread corruption",
+        planned: new CalendarDate(1822, 4, 27),
         status: "complete",
         checks: [
           newCheckItem({ text: "Ratified 15th Amendment", ticked: true }),
@@ -235,6 +275,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "19. Rutherford B. Hayes",
         note: "1877–1881 · Disputed election ended Reconstruction; pushed civil service reform",
+        planned: new CalendarDate(1822, 10, 4),
         status: "complete",
         checks: [
           newCheckItem({ text: "Ended Reconstruction by withdrawing troops", ticked: true }),
@@ -244,6 +285,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "20. James A. Garfield",
         note: "1881 · Assassinated 200 days in; championed education and civil rights",
+        planned: new CalendarDate(1831, 11, 19),
         status: "complete",
         checks: [
           newCheckItem({ text: "Shot by disappointed office-seeker", ticked: true }),
@@ -253,6 +295,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "21. Chester A. Arthur",
         note: "1881–1885 · Surprised critics with honest governance; Pendleton Civil Service Act",
+        planned: new CalendarDate(1829, 10, 5),
         status: "complete",
         checks: [
           newCheckItem({ text: "Pendleton Civil Service Reform Act", ticked: true }),
@@ -262,6 +305,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "22. Grover Cleveland",
         note: "1885–1889 · First Democrat after Civil War; known for vetoing pork-barrel bills",
+        planned: new CalendarDate(1837, 3, 18),
         status: "complete",
         checks: [
           newCheckItem({ text: "Vetoed hundreds of private pension bills", ticked: true }),
@@ -271,6 +315,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "23. Benjamin Harrison",
         note: "1889–1893 · Six states admitted to union; Sherman Antitrust Act passed",
+        planned: new CalendarDate(1833, 8, 20),
         status: "complete",
         checks: [
           newCheckItem({ text: "Sherman Antitrust Act (1890)", ticked: true }),
@@ -280,6 +325,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "24. Grover Cleveland",
         note: "1893–1897 · Only president to serve two non-consecutive terms",
+        planned: new CalendarDate(1837, 3, 18),
         status: "complete",
         checks: [
           newCheckItem({ text: "Only non-consecutive two-term president", ticked: true }),
@@ -289,6 +335,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "25. William McKinley",
         note: "1897–1901 · Spanish-American War made US a global power; assassinated",
+        planned: new CalendarDate(1843, 1, 29),
         status: "complete",
         checks: [
           newCheckItem({ text: "Spanish-American War (1898)", ticked: true }),
@@ -300,6 +347,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "26. Theodore Roosevelt",
         note: "1901–1909 · Trust-busting, conservation, and Big Stick foreign policy",
+        planned: new CalendarDate(1858, 10, 27),
         status: "complete",
         checks: [
           newCheckItem({ text: "Busted railroad and oil trusts", ticked: true }),
@@ -313,6 +361,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "27. William Howard Taft",
         note: "1909–1913 · More antitrust suits than TR; later became Chief Justice",
+        planned: new CalendarDate(1857, 9, 15),
         status: "complete",
         checks: [
           newCheckItem({ text: "Filed more antitrust suits than Roosevelt", ticked: true }),
@@ -325,6 +374,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "28. Woodrow Wilson",
         note: "1913–1921 · Led US through WWI; championed League of Nations (which Senate rejected)",
+        planned: new CalendarDate(1856, 12, 28),
         status: "complete",
         checks: [
           newCheckItem({ text: "Federal Reserve Act (1913)", ticked: true }),
@@ -335,6 +385,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "29. Warren G. Harding",
         note: "1921–1923 · Teapot Dome scandal; died in office",
+        planned: new CalendarDate(1865, 11, 2),
         status: "complete",
         checks: [
           newCheckItem({ text: "Teapot Dome oil bribery scandal", ticked: true }),
@@ -344,6 +395,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "30. Calvin Coolidge",
         note: "1923–1929 · 'Silent Cal' presided over Roaring Twenties prosperity",
+        planned: new CalendarDate(1872, 7, 4),
         status: "complete",
         checks: [
           newCheckItem({ text: "Reduced national debt and taxes", ticked: true }),
@@ -353,6 +405,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "31. Herbert Hoover",
         note: "1929–1933 · Great Depression began on his watch; opposed direct federal relief",
+        planned: new CalendarDate(1874, 8, 10),
         status: "complete",
         checks: [
           newCheckItem({ text: "Stock market crash October 1929", ticked: true }),
@@ -362,6 +415,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "32. Franklin D. Roosevelt",
         note: "1933–1945 · New Deal, WWII; only president elected four times",
+        planned: new CalendarDate(1882, 1, 30),
         status: "complete",
         checks: [
           newCheckItem({ text: "New Deal programs combated Depression", ticked: true }),
@@ -372,6 +426,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "33. Harry S. Truman",
         note: "1945–1953 · Dropped atomic bombs; Marshall Plan rebuilt Europe; Korean War",
+        planned: new CalendarDate(1884, 5, 8),
         status: "complete",
         checks: [
           newCheckItem({ text: "Authorized atomic bombs on Japan", ticked: true }),
@@ -383,6 +438,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "34. Dwight D. Eisenhower",
         note: "1953–1961 · WWII Supreme Commander; Interstate Highway System; warned of military-industrial complex",
+        planned: new CalendarDate(1890, 10, 14),
         status: "complete",
         checks: [
           newCheckItem({ text: "Korean War armistice", ticked: true }),
@@ -393,6 +449,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "35. John F. Kennedy",
         note: "1961–1963 · Moon mission, Cuban Missile Crisis; assassinated in Dallas",
+        planned: new CalendarDate(1917, 5, 29),
         status: "complete",
         checks: [
           newCheckItem({ text: "Cuban Missile Crisis (1962)", ticked: true }),
@@ -403,6 +460,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "36. Lyndon B. Johnson",
         note: "1963–1969 · Great Society; Civil Rights Act; escalated Vietnam War",
+        planned: new CalendarDate(1908, 8, 27),
         status: "complete",
         checks: [
           newCheckItem({ text: "Civil Rights Act (1964)", ticked: true }),
@@ -413,6 +471,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "37. Richard Nixon",
         note: "1969–1974 · Opened China; EPA created; resigned over Watergate",
+        planned: new CalendarDate(1913, 1, 9),
         status: "complete",
         checks: [
           newCheckItem({ text: "Opened diplomatic relations with China", ticked: true }),
@@ -423,6 +482,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "38. Gerald Ford",
         note: "1974–1977 · Only president never elected VP or President; pardoned Nixon",
+        planned: new CalendarDate(1913, 7, 14),
         status: "complete",
         checks: [
           newCheckItem({ text: "Pardoned Richard Nixon", ticked: true }),
@@ -432,6 +492,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "39. Jimmy Carter",
         note: "1977–1981 · Camp David Accords; Iran hostage crisis ended presidency",
+        planned: new CalendarDate(1924, 10, 1),
         status: "complete",
         checks: [
           newCheckItem({ text: "Camp David Accords (Egypt-Israel peace)", ticked: true }),
@@ -442,6 +503,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "40. Ronald Reagan",
         note: "1981–1989 · Reaganomics, Cold War endgame, Iran-Contra affair",
+        planned: new CalendarDate(1911, 2, 6),
         status: "complete",
         checks: [
           newCheckItem({ text: "Survived assassination attempt (1981)", ticked: true }),
@@ -452,6 +514,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "41. George H.W. Bush",
         note: "1989–1993 · Gulf War coalition; oversaw Soviet collapse",
+        planned: new CalendarDate(1924, 6, 12),
         status: "complete",
         checks: [
           newCheckItem({ text: "Gulf War: liberated Kuwait (1991)", ticked: true }),
@@ -462,6 +525,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "42. Bill Clinton",
         note: "1993–2001 · Economic boom; NAFTA; impeached over Lewinsky affair",
+        planned: new CalendarDate(1946, 8, 19),
         status: "complete",
         checks: [
           newCheckItem({ text: "Budget surplus achieved", ticked: true }),
@@ -472,6 +536,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "43. George W. Bush",
         note: "2001–2009 · 9/11 response; wars in Afghanistan and Iraq; 2008 financial crisis",
+        planned: new CalendarDate(1946, 7, 6),
         status: "complete",
         checks: [
           newCheckItem({ text: "Responded to 9/11 attacks", ticked: true }),
@@ -482,6 +547,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "44. Barack Obama",
         note: "2009–2017 · First Black president; ACA; killed bin Laden; Nobel Peace Prize",
+        planned: new CalendarDate(1961, 8, 4),
         status: "complete",
         checks: [
           newCheckItem({ text: "Affordable Care Act (2010)", ticked: true }),
@@ -492,6 +558,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "45. Donald Trump",
         note: "2017–2021 · Tax cuts; impeached twice; COVID-19 pandemic",
+        planned: new CalendarDate(1946, 6, 14),
         status: "complete",
         checks: [
           newCheckItem({ text: "Tax Cuts and Jobs Act (2017)", ticked: true }),
@@ -502,6 +569,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "46. Joe Biden",
         note: "2021–2025 · Infrastructure law; Ukraine aid; oldest president; did not seek re-election",
+        planned: new CalendarDate(1942, 11, 20),
         status: "complete",
         checks: [
           newCheckItem({ text: "Infrastructure Investment and Jobs Act", ticked: true }),
@@ -512,6 +580,7 @@ export const mockProjects: ProjectItem[] = [
       newTodoItem({
         title: "47. Donald Trump",
         note: "2025– · Second non-consecutive term; tariffs and federal restructuring",
+        planned: new CalendarDate(1946, 6, 14),
         checks: [
           newCheckItem({ text: "Broad tariff regime introduced", ticked: true }),
           newCheckItem({ text: "DOGE federal workforce reductions", ticked: true }),
@@ -847,14 +916,11 @@ export const mockProjects: ProjectItem[] = [
 export const mockPanels = (projects: ProjectItem[]): PanelItem[] => {
   return [
     newPanelItem({
-      instance: newProjectInstance({ project: projects[0] }),
-      layout: { sideShow: true, sideWidth: 200, spacerLeft: "disabled" },
-    }),
-    newPanelItem({
       instance: newProjectInstance({
-        project: projects[1],
-        todoExpanded: { [projects[1].rows[50].id]: true },
+        project: projects[0],
+        todoExpanded: { [projects[0].rows[2].id]: true },
       }),
+      layout: { sideShow: true, sideWidth: 200, spacerLeft: "disabled" },
     }),
   ];
 };

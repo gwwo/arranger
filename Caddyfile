@@ -1,0 +1,11 @@
+arranger.gwo.me {
+	reverse_proxy web:3000 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+
+	# The OTP destination page is always opened cold (via email link) so a
+	# stale cached HTML referencing old content-hash asset filenames causes a
+	# blank page until the user reloads. no-store forces a fresh fetch every time.
+	header /auth/otp Cache-Control "no-store"
+}
