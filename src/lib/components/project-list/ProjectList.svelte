@@ -122,6 +122,7 @@
     projIdShown: string | null;
     // projIdToReveal: string | null;
     showProject: (proj: ProjectItem) => void;
+    openInNewPanel?: (proj: ProjectItem) => void;
     selected?: Record<string, boolean | undefined>;
     mut?: Mutator;
   };
@@ -132,10 +133,16 @@
     projIdShown,
     // projIdToReveal = $bindable(),
     showProject,
+    openInNewPanel,
     selected = $bindable({}),
     mut = useMutator(),
   }: Props = $props();
   const contextMenu = useContextMenu();
+
+  // The id of the row currently being renamed (DormantInput in edit mode). The
+  // "open in new panel" affordance is hidden for this row so it doesn't sit over
+  // the text field while typing.
+  let editingId = $state<string | null>(null);
 
   // const { receiveRows, moveProjects, deleteProjects } = useMutator();
 
@@ -360,28 +367,44 @@
   {#snippet row(items, item, index, prepare, phantomIndex, listener, isToReceive)}
     <div
       {@attach listener}
-      class={["h-fit w-full", getBorderStyle(items, item, index, phantomIndex)]}
+      class={[
+        "group/row flex h-[28px] w-full items-center border text-sm",
+        isToReceive ? "border-teal-500" : "border-transparent",
+        getBorderStyle(items, item, index, phantomIndex),
+        projIdShown === item.id
+          ? isToReceive
+            ? "bg-pink-300"
+            : "bg-pink-200"
+          : selected[item.id]
+            ? "bg-pink-100"
+            : "",
+      ]}
     >
       <DormantInput
         oncontextmenu={(ev) => openContextMenu(ev, item)}
-        class={[
-          "flex h-[28px] w-full items-center border px-2 text-sm",
-          isToReceive ? "border-teal-500" : "border-transparent",
-          getBorderStyle(items, item, index, phantomIndex),
-          projIdShown === item.id
-            ? isToReceive
-              ? "bg-pink-300"
-              : "bg-pink-200"
-            : selected[item.id]
-              ? "bg-pink-100"
-              : "",
-        ]}
+        class="flex h-full min-w-0 flex-1 items-center overflow-hidden bg-transparent px-2 outline-none"
         placeholder={placeholder.project.name}
+        onFocus={() => (editingId = item.id)}
+        onBlur={() => editingId === item.id && (editingId = null)}
         bind:value={
           () => item.name, (v) => (v !== item.name ? mut.editProjectName(item.id, v) : null)
         }
         {@attach getDragHandle(items, item, index, prepare)}
       ></DormantInput>
+      {#if openInNewPanel && editingId !== item.id}
+        <button
+          class="mr-1 -ml-1 hidden size-5 flex-none items-center justify-center rounded text-gray-500 group-hover/row:flex in-[.dragging-to-insert]:hidden! hover:bg-black/10 hover:text-gray-700 active:bg-black/20"
+          aria-label="Open list in a new panel"
+          title="Open in new panel"
+          onpointerdown={(e) => e.stopPropagation()}
+          onclick={(e) => {
+            e.stopPropagation();
+            openInNewPanel?.(item);
+          }}
+        >
+          <span class="icon-[cuida--open-in-new-tab-outline] size-3.5"></span>
+        </button>
+      {/if}
     </div>
   {/snippet}
 </ReceiveList>

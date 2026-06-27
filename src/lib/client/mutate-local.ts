@@ -148,6 +148,33 @@ export const useSetProjInPanel = createMutator(getPanelContext, (state, ctx, pro
   pruneOrphanPlacementProjects(state);
 });
 
+// Open a project in a fresh panel inserted right after this one, instead of
+// replacing this panel's instance (see useSetProjInPanel). Mirrors
+// useClonePanel's layout inheritance: keep this panel's height, take a default
+// width, and inherit the gap that preceded the original next panel.
+export const useOpenProjInNewPanel = createMutator(
+  getPanelContext,
+  (state, ctx, projId: string) => {
+    const panelIndex = state.panels.findIndex(({ id }) => id === ctx.panelId);
+    if (panelIndex === -1) return;
+    const project = state.projects.find(({ id }) => id === projId);
+    if (project == null) return;
+    const { height } = state.panels[panelIndex].layout;
+    const spacerLeft = state.panels.at(panelIndex + 1)?.layout.spacerLeft ?? undefined;
+    if (state.panels.length >= MAX_PANEL_COUNT) {
+      state.panels.splice(state.panels.length - 1, 1);
+    }
+    state.panels.splice(
+      panelIndex + 1,
+      0,
+      newPanelItem({
+        layout: { height, spacerLeft },
+        instance: newProjectInstance({ project }),
+      }),
+    );
+  },
+);
+
 export const useSetOperationInPanel = createMutator(
   getPanelContext,
   (state, ctx, instance: OperationInstance) => {
