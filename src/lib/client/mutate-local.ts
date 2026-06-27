@@ -7,6 +7,7 @@ import {
   newPlacementInstance,
   operationToInstance,
   type AppState,
+  type Instance,
   type OperationInstance,
   type PanelLayout,
 } from "$lib/client/model";
@@ -148,17 +149,27 @@ export const useSetProjInPanel = createMutator(getPanelContext, (state, ctx, pro
   pruneOrphanPlacementProjects(state);
 });
 
-// Open a project in a fresh panel inserted right after this one, instead of
-// replacing this panel's instance (see useSetProjInPanel). Mirrors
-// useClonePanel's layout inheritance: keep this panel's height, take a default
-// width, and inherit the gap that preceded the original next panel.
-export const useOpenProjInNewPanel = createMutator(
+// Open a project or operation in a fresh panel inserted right after this one,
+// instead of replacing this panel's instance (see useSetProjInPanel /
+// useSetOperationInPanel). Mirrors useClonePanel's layout inheritance: keep this
+// panel's height, take a default width, and inherit the gap that preceded the
+// original next panel.
+export const useOpenInNewPanel = createMutator(
   getPanelContext,
-  (state, ctx, projId: string) => {
+  (state, ctx, target: { projId: string } | { op: OperationInstance }) => {
     const panelIndex = state.panels.findIndex(({ id }) => id === ctx.panelId);
     if (panelIndex === -1) return;
-    const project = state.projects.find(({ id }) => id === projId);
-    if (project == null) return;
+    // Resolve what to open before mutating panels, so a missing project bails
+    // out without having evicted anything. Projects resolve by id to the
+    // reactive object in state (like useSetProjInPanel); operations don't.
+    let instance: Instance;
+    if ("projId" in target) {
+      const project = state.projects.find(({ id }) => id === target.projId);
+      if (project == null) return;
+      instance = newProjectInstance({ project });
+    } else {
+      instance = operationToInstance(target.op);
+    }
     const { height } = state.panels[panelIndex].layout;
     const spacerLeft = state.panels.at(panelIndex + 1)?.layout.spacerLeft ?? undefined;
     if (state.panels.length >= MAX_PANEL_COUNT) {
@@ -167,10 +178,7 @@ export const useOpenProjInNewPanel = createMutator(
     state.panels.splice(
       panelIndex + 1,
       0,
-      newPanelItem({
-        layout: { height, spacerLeft },
-        instance: newProjectInstance({ project }),
-      }),
+      newPanelItem({ layout: { height, spacerLeft }, instance }),
     );
   },
 );

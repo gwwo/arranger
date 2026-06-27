@@ -2,7 +2,7 @@
   import { useCreateProject } from "$lib/client/mutate-remote";
   import {
     useOpenAccountPanel,
-    useOpenProjInNewPanel,
+    useOpenInNewPanel,
     useSetOperationInPanel,
     useSetProjInPanel,
   } from "$lib/client/mutate-local";
@@ -10,8 +10,8 @@
   const useMutator = () => ({
     createProject: useCreateProject(),
     setProjInPanel: useSetProjInPanel(),
-    openProjInNewPanel: useOpenProjInNewPanel(),
     setOperationInPanel: useSetOperationInPanel(),
+    openInNewPanel: useOpenInNewPanel(),
     openAccountPanel: useOpenAccountPanel(),
   });
   type Mutator = ReturnType<typeof useMutator>;
@@ -99,6 +99,9 @@
       mut.setOperationInPanel(op);
       projsSelected = {};
     }}
+    openInNewPanel={(op) => {
+      mut.openInNewPanel({ op });
+    }}
   ></OperationList>
 
   <ProjectList
@@ -110,7 +113,7 @@
       mut.setProjInPanel(project.id);
     }}
     openInNewPanel={(project) => {
-      mut.openProjInNewPanel(project.id);
+      mut.openInNewPanel({ projId: project.id });
     }}
   ></ProjectList>
   <div

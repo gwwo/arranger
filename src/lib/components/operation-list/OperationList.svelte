@@ -48,10 +48,11 @@
   type Props = {
     class: ClassValue;
     showOperation: (op: OperationInstance) => void;
+    openInNewPanel?: (op: OperationInstance) => void;
     operationShown: OperationInstance | null;
   };
 
-  let { class: className, showOperation, operationShown }: Props = $props();
+  let { class: className, showOperation, openInNewPanel, operationShown }: Props = $props();
 
   const labelFromValue = (value: OperationInstance) =>
     value.charAt(0).toUpperCase() + value.slice(1);
@@ -192,25 +193,40 @@
 <div class={[className, "font-semibold text-gray-700 select-none"]}>
   {#each operations as op}
     {@const isToReceive = activePlan != null && hoverOp === op.value}
-    <button
-      {@attach attachReceive(op.value)}
-      class={[
-        "flex h-[28px] w-full items-center gap-2 rounded-md border px-2",
-        op.buttonClass,
-        isToReceive ? "border-teal-500" : "border-transparent",
-        // Darken on receive so the shrunk (teal) dragged chip stands out — but
-        // never override the shown row's pink background.
-        op.value === operationShown ? "bg-pink-200" : isToReceive ? "bg-teal-200" : "",
-      ]}
-      onclick={(ev) => {
-        showOperation(op.value);
-        // Drop focus so the row doesn't pick up a :focus-visible outline when
-        // the user then drives the opened page with the keyboard (arrow nav).
-        ev.currentTarget.blur();
-      }}
-    >
-      <span class={[op.iconClass, "size-4.5"]}></span>
-      <p>{labelFromValue(op.value)}</p>
-    </button>
+    <div class={["group/row relative", op.buttonClass]}>
+      <button
+        {@attach attachReceive(op.value)}
+        class={[
+          "flex h-[28px] w-full items-center gap-2 rounded-md border px-2",
+          isToReceive ? "border-teal-500" : "border-transparent",
+          // Darken on receive so the shrunk (teal) dragged chip stands out — but
+          // never override the shown row's pink background.
+          op.value === operationShown ? "bg-pink-200" : isToReceive ? "bg-teal-200" : "",
+        ]}
+        onclick={(ev) => {
+          showOperation(op.value);
+          // Drop focus so the row doesn't pick up a :focus-visible outline when
+          // the user then drives the opened page with the keyboard (arrow nav).
+          ev.currentTarget.blur();
+        }}
+      >
+        <span class={[op.iconClass, "size-4.5"]}></span>
+        <p>{labelFromValue(op.value)}</p>
+      </button>
+      {#if openInNewPanel}
+        <button
+          class="absolute top-1/2 right-1 hidden size-5 -translate-y-1/2 flex-none items-center justify-center rounded text-gray-500 group-hover/row:flex in-[.dragging-to-insert]:hidden! hover:bg-black/10 hover:text-gray-700 active:bg-black/20"
+          aria-label="Open in a new panel"
+          title="Open in new panel"
+          onpointerdown={(e) => e.stopPropagation()}
+          onclick={(e) => {
+            e.stopPropagation();
+            openInNewPanel?.(op.value);
+          }}
+        >
+          <span class="icon-[cuida--open-in-new-tab-outline] size-3.5"></span>
+        </button>
+      {/if}
+    </div>
   {/each}
 </div>
