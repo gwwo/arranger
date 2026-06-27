@@ -464,7 +464,7 @@
       banner = { kind: "error", text: "Account overwritten — please re-sign in." };
     } else if (sessionStatus === "invalid") {
       banner = { kind: "error", text: "Session ended — please re-sign in." };
-    } else if (sessionStatus === "stale" && (reSignInBlockedByStale || !hasPasswordCred)) {
+    } else if (sessionStatus === "stale" && reSignInBlockedByStale) {
       banner = { kind: "error", text: "Session stale — please re-sign in." };
     }
   });
@@ -487,7 +487,7 @@
     reSignInOpen ||
     sessionStatus === "invalid" ||
     sessionStatus === "overwritten" ||
-    (sessionStatus === "stale" && (reSignInBlockedByStale || !hasPasswordCred)),
+    (sessionStatus === "stale" && reSignInBlockedByStale),
   );
 
   const sessionBlocked = $derived(
@@ -1010,46 +1010,40 @@
   <SectionHeader label="The Exit" />
 </div>
 <div style:margin-top="{margins.deleteUser}px" class="trans-margin">
-  {#if !hasPasswordCred && sessionStatus !== "fresh"}
-    <ActionRow disabled variant="danger">
-      {#snippet label()}Delete account (session {sessionStatus}; re-sign in){/snippet}
-    </ActionRow>
-  {:else}
-    <ActionRow
-      bind:this={rowRefs["delete-user"]}
-      expanded={action === "delete-user"}
-      variant="danger"
-      disabled={deleteChecking || notOpenBlocked("delete-user")}
-      onclick={() => {
-        if (action === "delete-user") openAction(null);
-        else startDeleteUser();
-      }}
-    >
-      {#snippet label()}{deleteChecking ? "Checking…" : "Delete account"}{/snippet}
-      {#snippet expandedContent()}
-        <form onsubmit={doDeleteUser} class="space-y-2">
-          {#if hasPasswordCred}
-            <p class="text-xs text-red-800">Re-enter your password to delete.</p>
-            <PasswordInput
-              required
-              placeholder="Current password"
-              bind:value={confirmPassword}
-              class="w-full rounded-md border border-red-300 bg-white py-2 pr-14 pl-3 text-sm"
-            />
-          {:else}
-            <p class="text-xs text-red-800">
-              Your session is fresh. Confirm to permanently delete this account.
-            </p>
-          {/if}
-          <button
-            type="submit"
-            class="w-full rounded-md bg-red-600 py-2 text-sm text-white disabled:opacity-50"
-            disabled={form.busy}
-          >{form.busy ? "…" : "Delete"}</button>
-        </form>
-      {/snippet}
-    </ActionRow>
-  {/if}
+  <ActionRow
+    bind:this={rowRefs["delete-user"]}
+    expanded={action === "delete-user"}
+    variant="danger"
+    disabled={deleteChecking || notOpenBlocked("delete-user")}
+    onclick={() => {
+      if (action === "delete-user") openAction(null);
+      else startDeleteUser();
+    }}
+  >
+    {#snippet label()}{deleteChecking ? "Checking…" : "Delete account"}{/snippet}
+    {#snippet expandedContent()}
+      <form onsubmit={doDeleteUser} class="space-y-2">
+        {#if hasPasswordCred}
+          <p class="text-xs text-red-800">Re-enter your password to delete.</p>
+          <PasswordInput
+            required
+            placeholder="Current password"
+            bind:value={confirmPassword}
+            class="w-full rounded-md border border-red-300 bg-white py-2 pr-14 pl-3 text-sm"
+          />
+        {:else}
+          <p class="text-xs text-red-800">
+            Your session is fresh. Confirm to permanently delete this account.
+          </p>
+        {/if}
+        <button
+          type="submit"
+          class="w-full rounded-md bg-red-600 py-2 text-sm text-white disabled:opacity-50"
+          disabled={form.busy}
+        >{form.busy ? "…" : "Delete"}</button>
+      </form>
+    {/snippet}
+  </ActionRow>
 </div>
 
 <div style:margin-top="{margins.signOut}px" class="trans-margin">
