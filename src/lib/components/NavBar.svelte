@@ -66,6 +66,8 @@
   // "syncing" covers both an in-flight push and queued ops waiting for one
   // to start — visually they're the same "work pending" state to the user.
   // "offline" = no pinned user (demo mode); sync is suppressed end-to-end.
+  // The page seeds pinnedUserId during render (see +page.svelte), so a signed-in
+  // SSR/hydration shows the synced state from the first paint, not "offline".
   let syncState: "offline" | "syncing" | "synced" | "failed" = $derived(
     syncStatus.pinnedUserId == null
       ? "offline"

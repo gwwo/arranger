@@ -1,25 +1,12 @@
 import type { PageServerLoad } from "./$types";
 import { ensureDataUser } from "$lib/server/sync-apply";
 import { buildProjListDelta, buildProjDelta, buildPlacementDelta, getProjPlacement } from "$lib/server/sync/pull-handler";
-import type { ProjListDelta, ProjDelta, PlacementDelta } from "$lib/server/sync/types";
+import type { PlacementDelta, ProjDelta } from "$lib/server/sync/types";
 import { listUserCreds, isSessionFresh } from "$lib/server/user-auth";
 import type { Me } from "$lib/components/user-panel/types";
-import { OPEN_SCOPES_COOKIE, parseOpenScopes } from "$lib/client/open-scopes";
+import { PANEL_COMP_COOKIE, parsePanelComp, scopesOf } from "$lib/client/panel-comp";
 import type { PlacementName } from "$lib/client/model";
-
-export type BootstrapState = {
-  projList: ProjListDelta;
-  // Content for the projects the open panels were showing — active OR drilled
-  // into from archive/trash; everything else is fetched lazily on the client.
-  projContents: Record<string, ProjDelta>;
-  // For prefetched projects that aren't in the active list, where they live, so
-  // the client renders them as a placement drill-in ("Back to Archive/Trash").
-  projPlacements: Record<string, "archive" | "trash">;
-  // Null when the placement view wasn't open (so wasn't prefetched).
-  inbox: PlacementDelta | null;
-  archive: PlacementDelta | null;
-  trash: PlacementDelta | null;
-};
+import type { BootstrapState } from "$lib/client/bootstrap";
 
 export const load: PageServerLoad = async ({ locals, cookies }) => {
   const s = locals.user;
@@ -28,6 +15,7 @@ export const load: PageServerLoad = async ({ locals, cookies }) => {
       state: null as BootstrapState | null,
       user: null,
       me: { user: null, credentials: [], sessionFresh: false } as Me,
+      panels: null,
     };
   }
 
@@ -38,16 +26,17 @@ export const load: PageServerLoad = async ({ locals, cookies }) => {
     listUserCreds(s.user.id),
   ]);
 
-  // Prefetch only the scopes the open panels were showing (from the cookie the
-  // client keeps in sync with its panels). With no cookie — first ever visit —
-  // default to the first active project, which the default main panel opens.
-  const open = parseOpenScopes(cookies.get(OPEN_SCOPES_COOKIE));
-  const wantProjects = open
-    ? open.projects
+  // Prefetch only the scopes the open panels were showing (from the panel_comp
+  // cookie the client keeps in sync with its panels). With no cookie — first ever
+  // visit — default to the first active project, which the default main panel opens.
+  const comp = parsePanelComp(cookies.get(PANEL_COMP_COOKIE));
+  const scopes = comp ? scopesOf(comp) : null;
+  const wantProjects = scopes
+    ? scopes.projects
     : projList.projects[0]
       ? [projList.projects[0].id]
       : [];
-  const wantPlacements = new Set<PlacementName>(open?.placements ?? []);
+  const wantPlacements = new Set<PlacementName>(scopes?.placements ?? []);
 
   const loadPlacement = (p: PlacementName): Promise<PlacementDelta | null> =>
     wantPlacements.has(p) ? buildPlacementDelta(s.user.id, p) : Promise.resolve(null);
@@ -95,5 +84,8 @@ export const load: PageServerLoad = async ({ locals, cookies }) => {
     state,
     user: { id: s.user.id, name: s.user.name, email: s.user.email },
     me,
+    // Echo the parsed composition back so the page builds the same panels the
+    // server prefetched for, server-side render and client hydration agreeing.
+    panels: comp,
   };
 };

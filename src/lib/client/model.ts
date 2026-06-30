@@ -166,13 +166,14 @@ export const newPlacementInstance = (
 ): PlacementInstance => ({ kind, selected, expandedId });
 
 export const newPanelItem = (data: {
+  id?: string;
   layout?: Partial<PanelLayout>;
   instance: Instance;
 }): PanelItem => {
-  const { layout, instance } = data;
+  const { id, layout, instance } = data;
   const { mainWidth, height, sideWidth, spacerLeft, sideShow } = layout ?? {};
   return {
-    id: newId(),
+    id: id ?? newId(),
     layout: {
       mainWidth: mainWidth ?? 450,
       height: height ?? 680,

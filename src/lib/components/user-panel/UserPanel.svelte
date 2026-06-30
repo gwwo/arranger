@@ -5,8 +5,12 @@
   // before the cached account reappears. Anchor/invalidKind/lastReported
   // also belong here so the anchor identity doesn't reset on remount.
   //
-  // SSR-safe because UserPanel is only rendered after `hydrated = true`
-  // in +page.svelte, so none of this module state is touched server-side.
+  // This module state is shared across requests on the server, but `me` carries
+  // the requesting user's own info (same as the SSR'd project data) — so it's
+  // seeded synchronously per render from request-scoped `data.me` (see seedMe);
+  // SSR renders are serialized and don't yield, so one request's `me` can't leak
+  // into another's render.
+  import { browser } from "$app/environment";
   import type { Me } from "./types";
 
   let me: Me = $state({ user: null, credentials: [], sessionFresh: false });
@@ -19,12 +23,19 @@
     | ((userId: string | null, opts?: { newUser?: boolean }) => void)
     | null = null;
 
-  // Called once on page hydration with the `me` shape that +page.server.ts
-  // computed alongside the initial pullState — lets the panel render the
-  // cached account immediately on first open instead of flashing "Loading…".
-  // No-op once any load (seed or fetch) has completed.
+  // Seeded with the `me` shape +page.server.ts computed alongside the initial
+  // pull, so the account panel renders the cached account immediately (server-
+  // side and on first open) instead of flashing "Loading…".
+  //
+  // On the client this runs once — the `firstLoadDone` guard then preserves the
+  // cached `me` across panel remounts (and won't clobber a freshly fetched one).
+  // On the server the guard is bypassed so every request re-seeds with its own
+  // `data.me` before the panel renders: this module is shared between requests,
+  // and a render must not inherit a previous request's user. Safe because SSR
+  // renders are synchronous and serialized — the seed and the render that reads
+  // it can't be interleaved by another request.
   export function seedMe(initial: Me) {
-    if (firstLoadDone) return;
+    if (firstLoadDone && browser) return;
     me = initial;
     firstLoadDone = true;
     anchorUserId = initial.user?.id ?? null;

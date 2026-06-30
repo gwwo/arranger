@@ -5,12 +5,128 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script>
-      if (navigator.vendor === "Apple Computer, Inc.")
-        document.documentElement.dataset.webkit = "";
+      if (navigator.vendor === "Apple Computer, Inc.") document.documentElement.dataset.webkit = "";
+      // The loading banner + panel-reveal choreography below is only for the
+      // panel app at "/". Every other route (auth pages, etc.) server-renders its
+      // final content, so mark it interactive up front — before first paint, so
+      // the banner never flashes and the panel-stage gating is a no-op.
+      if (location.pathname !== "/")
+        document.documentElement.classList.add("panels-ready", "interactive");
     </script>
+    <!-- Hold the server-rendered panels hidden until the whole page HTML has
+         parsed, then reveal them all at once (the reveal script after <body>) so
+         a slow connection shows the finished layout instead of panels streaming
+         in one at a time. No-JS falls back to visible. -->
+    <style>
+      .panel-stage {
+        visibility: hidden;
+      }
+      html.panels-ready .panel-stage {
+        visibility: visible;
+      }
+
+      /* Phase 1 (HTML still downloading): a skeleton in the panel area so the page
+         isn't blank. Server-rendered for guests and signed-in users alike (see
+         +page.svelte); hidden the instant the real panels are revealed at parse-end. */
+      .panel-placeholder {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        padding: 1rem;
+        z-index: 1;
+      }
+      html.panels-ready .panel-placeholder {
+        display: none;
+      }
+      .skeleton-card {
+        flex: none;
+        border-radius: 16px;
+        background: #e5e7eb;
+        animation: skeleton-pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes skeleton-pulse {
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      /* Status banner with a CSS-only spinner (works before any JS), shown until
+         the page is interactive. The label tracks the phase: "Rendering" while the
+         HTML is still downloading, "Making interactive" once parsed but not yet
+         hydrated. */
+      .status-banner {
+        display: none;
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 99999;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 14px;
+        border-radius: 9999px;
+        background: rgba(20, 20, 22, 0.85);
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+        pointer-events: none;
+      }
+      html:not(.interactive) .status-banner {
+        display: flex;
+      }
+      .status-banner > .label {
+        display: none;
+      }
+      html:not(.panels-ready) .status-banner > .label-rendering {
+        display: inline;
+      }
+      html.panels-ready:not(.interactive) .status-banner > .label-interactive {
+        display: inline;
+      }
+      .status-banner::before {
+        content: "";
+        width: 13px;
+        height: 13px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: status-spin 0.7s linear infinite;
+      }
+      @keyframes status-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+    <noscript>
+      <style>
+        .panel-stage {
+          visibility: visible !important;
+        }
+        .panel-placeholder,
+        .status-banner {
+          display: none !important;
+        }
+      </style>
+    </noscript>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
+    <div class="status-banner" role="status">
+      <span class="label label-rendering">Rendering page…</span>
+      <span class="label label-interactive">Making page interactive…</span>
+    </div>
     <div style="display: contents">%sveltekit.body%</div>
+    <script>
+      // Stamp when the "Making page interactive…" phase begins so the hydration
+      // code can keep that banner up for a minimum time (see interactive.ts).
+      window.__panelsReadyAt = performance.now();
+      document.documentElement.classList.add("panels-ready");
+    </script>
   </body>
 </html>

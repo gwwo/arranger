@@ -10,7 +10,30 @@ import {
   type ProjectItem,
 } from "./model";
 
-export const freshMockProjects = (): ProjectItem[] => [
+// The guest demo is server-rendered and then hydrated on the client, so its
+// entity ids must be identical on both sides — `crypto.randomUUID` would differ
+// between the two renders and break hydration. Assign deterministic,
+// position-based ids prefixed `guest-`; they're rewritten to fresh UUIDs at
+// sign-up (see materializeGuestIds) so different guests never collide on the
+// global primary key.
+export const GUEST_ID_PREFIX = "guest-";
+
+const assignGuestIds = (projects: ProjectItem[]): ProjectItem[] => {
+  projects.forEach((proj, pi) => {
+    proj.id = `${GUEST_ID_PREFIX}p${pi}`;
+    proj.rows.forEach((row, ri) => {
+      row.id = `${proj.id}-r${ri}`;
+      if ("checks" in row) {
+        row.checks.forEach((check, ci) => {
+          check.id = `${row.id}-c${ci}`;
+        });
+      }
+    });
+  });
+  return projects;
+};
+
+export const freshMockProjects = (): ProjectItem[] => assignGuestIds([
   newProjectItem({
     name: "Click Here & Drag There",
     note: "Things you can try 🎉",
@@ -910,12 +933,13 @@ export const freshMockProjects = (): ProjectItem[] => [
       ).map(([name, note]) => newTodoItem({ title: name, note })),
     ],
   }),
-];
+]);
 
 // important to wire the projects returned from $state to panel's instance, so it actually controls it globally.
 export const mockPanels = (projects: ProjectItem[]): PanelItem[] => {
   return [
     newPanelItem({
+      id: `${GUEST_ID_PREFIX}panel-main`,
       instance: newProjectInstance({
         project: projects[0],
         todoExpanded: { [projects[0].rows[2].id]: true },

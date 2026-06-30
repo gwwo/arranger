@@ -51,8 +51,9 @@ Requires only **Docker** and **VSCode** (with the Dev Containers extension) on y
 1. Create your env file: `cp .env.example .env` — the defaults work out of the box. (Do this first: reopening starts the Postgres container, which reads `.env`.)
 2. Open the repo in VSCode and run **Dev Containers: Reopen in Container**.
 3. Create the database tables from the schema: `bunx drizzle-kit push`.
-4. Start the dev server: `bun run dev --host`. Or run a production build with `bun run build && PORT=5173 bun build/index.js`.
-5. Visit `http://localhost:5173`.
+4. Start the dev server: `bun run dev --host`. 
+5. Or serve a production build with the bun adapter: `bun run build && bun run serve:prod-local`.
+6. Visit `http://localhost:5173`.
 
 ## Deploy to your VPS
 

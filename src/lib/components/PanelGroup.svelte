@@ -150,8 +150,11 @@
 </script>
 
 <!-- using `z-1` so that insert pile is stacked on top -->
+<!-- `panel-stage`: held hidden until the full page HTML has parsed, then revealed
+     all at once (see app.html) so a slow connection doesn't paint the panels in
+     one by one. -->
 <div
-  class="relative z-1 flex min-h-screen w-full items-center overflow-x-auto overflow-y-visible p-4 scroll-px-16"
+  class="panel-stage relative z-1 flex min-h-screen w-full items-center overflow-x-auto overflow-y-visible p-4 scroll-px-16"
 >
   <div
     bind:this={container}
