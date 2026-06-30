@@ -283,6 +283,9 @@
       {:else if day == 1 || chosen}
         <span class="text-xs font-semibold">{getMonthName(month).slice(0, 3)}</span>
         <span class="text-xs font-bold">{day}</span>
+      {:else if day == 2 && year !== dateToday.year}
+        <span class="text-[10px]/4 font-semibold">{year}</span>
+        <span class="text-xs font-bold">{day}</span>
       {:else}
         <span class="text-sm font-semibold">{day}</span>
       {/if}
