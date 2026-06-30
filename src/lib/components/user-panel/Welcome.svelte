@@ -7,16 +7,20 @@
     banner: Banner;
     loadMe: (opts?: { newUser?: boolean }) => Promise<boolean>;
     setOtp: (otp: OtpOriginator | null) => void;
+    // Owned by UserPanel so they survive the OtpProceed detour — on a sign-up,
+    // the form remounts already populated rather than flashing empty fields.
+    email: string;
+    password: string;
   };
   let {
     form,
     banner = $bindable(),
     loadMe,
     setOtp,
+    email = $bindable(""),
+    password = $bindable(""),
   }: Props = $props();
 
-  let email = $state("");
-  let password = $state("");
   let forgot = $state(false);
   let showPassword = $state(false);
 

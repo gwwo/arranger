@@ -387,58 +387,54 @@
       await uploadInitialState(appState);
       appState.stashedProjects = new Map();
     } else if (userId) {
-      // Sign-in: pull proj list then pull each project content.
+      // Sign-in: pull only the project list, then switch the panels right away.
+      // Every project (and placement view) starts as a stub, so the first panel
+      // shows the project list in its sidebar with a loading placeholder in its
+      // main area while each scope's content is fetched lazily (by the lazy-load
+      // effect / view components). This gates the post-sign-in switch on the
+      // list alone — the caller (loadMe) also has the user info by now, and
+      // holds the account view until this returns so the account panel and the
+      // panels flip together — instead of waiting for every project's rows.
       const listDelta = await pullProjList();
       if (!listDelta) return;
 
-      const newProjects = await Promise.all(
-        listDelta.projects.map(async (entry) => {
-          // Sign-in is an eager bootstrap: force a full fetch so each project
-          // arrives with all its rows. (resetSyncState above already dropped any
-          // stale per-proj syncedAtSeq, but a full fetch makes this independent
-          // of that ordering.)
-          const delta = await pullProj(entry.id, { full: true });
-          if (!delta) return { id: entry.id, name: entry.name, note: entry.note, rows: [] };
-          return projectFromDelta(entry.id, entry.name, entry.note, delta);
-        })
-      );
-      appState.projects = newProjects;
+      appState.projects = listDelta.projects.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        note: entry.note,
+        rows: [],
+      }));
 
-      // Also pull placement views.
-      const [inboxDelta, archiveDelta, trashDelta] = await Promise.all([
-        pullPlacement("inbox"),
-        pullPlacement("archive"),
-        pullPlacement("trash"),
-      ]);
-      if (inboxDelta) appState.inbox = inboxFromDelta(inboxDelta);
-      if (archiveDelta) appState.archive = archiveDelta.entries as ArchiveEntry[];
-      if (trashDelta) appState.trash = trashDelta.entries as ArchiveEntry[];
-
-      // Sign-in pulls everything eagerly, so nothing is stubbed (restore below
-      // may re-stub a trashed/archived drill-in for lazy fetch). The server is
-      // now the backing store for placement content, so drop any guest cold
-      // storage.
-      appState.projStub = {};
-      appState.placementStub = { inbox: false, archive: false, trash: false };
+      // Stub every project and placement view: each loads lazily the first time
+      // a panel shows it. The server is now the backing store, so drop the guest
+      // cold storage and clear the local placement data (it reloads on demand).
+      const projStub: Record<string, boolean> = {};
+      for (const entry of listDelta.projects) projStub[entry.id] = true;
+      appState.projStub = projStub;
+      appState.inbox = [];
+      appState.archive = [];
+      appState.trash = [];
+      appState.placementStub = { inbox: true, archive: true, trash: true };
       appState.stashedProjects = new Map();
 
-      const stored = loadPanels(userId, appState.projects);
-      if (stored) {
-        const finalStored = ensureMainData(stored, appState.projects);
-        applyStoredPanels(appState.panels, finalStored);
-        restorePlacementProjects(appState.panels, finalStored);
+      // Signing in from the guest page is a clean transform of what's on screen,
+      // not a resurrection of a saved arrangement: keep the guest panels'
+      // dimensions/spacing as-is, point the first panel at the first project
+      // (which shows its loading placeholder until content streams in), turn the
+      // sign-in panel into the account panel, and close any extra panels. The
+      // normal signed-in resume — restoring the saved multi-panel arrangement
+      // from the panel_comp cookie + localStorage — still happens on a real
+      // signed-in page load (SSR + onMount below), not here.
+      const proj = appState.projects[0];
+      const instance = proj ? newProjectInstance({ project: proj }) : newPlacementInstance("inbox");
+      const existingAccount = appState.panels.find(p => p.instance === "account");
+      const accountPanel = existingAccount ?? newPanelItem({ instance: "account" });
+      if (appState.panels.length > 0) {
+        appState.panels[0].instance = instance;
       } else {
-        const proj = appState.projects[0];
-        const instance = proj ? newProjectInstance({ project: proj }) : newPlacementInstance("inbox");
-        const existingAccount = appState.panels.find(p => p.instance === "account");
-        const accountPanel = existingAccount ?? newPanelItem({ instance: "account" });
-        if (appState.panels.length > 0) {
-          appState.panels[0].instance = instance;
-        } else {
-          appState.panels.push(newPanelItem({ instance }));
-        }
-        appState.panels.splice(1, appState.panels.length - 1, accountPanel);
+        appState.panels.push(newPanelItem({ instance }));
       }
+      appState.panels.splice(1, appState.panels.length - 1, accountPanel);
     } else {
       clearPanels(currentUserId);
       clearPanelCompCookie();

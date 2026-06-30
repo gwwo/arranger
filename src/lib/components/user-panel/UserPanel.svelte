@@ -20,7 +20,7 @@
   let lastReportedUserId: string | null = null;
   let inflight: Promise<boolean> | null = null;
   let authChangeHandler:
-    | ((userId: string | null, opts?: { newUser?: boolean }) => void)
+    | ((userId: string | null, opts?: { newUser?: boolean }) => void | Promise<void>)
     | null = null;
 
   // Seeded with the `me` shape +page.server.ts computed alongside the initial
@@ -45,7 +45,7 @@
   function reportAuth(next: string | null, opts?: { newUser?: boolean }) {
     if (next === lastReportedUserId) return;
     lastReportedUserId = next;
-    authChangeHandler?.(next, opts);
+    return authChangeHandler?.(next, opts);
   }
 
   // `opts.newUser`: caller knows this load is observing a session for an
@@ -66,9 +66,16 @@
       const next: Me = await r.json();
       firstLoadDone = true;
       if (anchorUserId === null) {
-        me = next;
         anchorUserId = next.user?.id ?? null;
-        reportAuth(anchorUserId, opts);
+        // Run the page's auth-change handler (it pulls the project list and
+        // switches the panels) BEFORE revealing the account view, so on sign-in
+        // the account panel and the panels flip together in one frame — project
+        // content then streams into the panels lazily. Sign-up (newUser) already
+        // has the demo state on screen and uploads it in the background, so don't
+        // gate on it — reveal the account immediately.
+        const applied = reportAuth(anchorUserId, opts);
+        if (!opts?.newUser) await applied;
+        me = next;
         return true;
       }
       if (next.user && next.user.id === anchorUserId) {
@@ -119,8 +126,10 @@
 
   type Props = {
     // Fires when the anchored signed-in user changes: `userId | null`.
-    // Use to (re)pull data, swap demo state, etc.
-    onAuthChange?: (userId: string | null) => void;
+    // Use to (re)pull data, swap demo state, etc. On first sign-in, loadMe
+    // awaits this before revealing the account view, so it can pull the project
+    // list and switch the panels in lockstep with the account-panel flip.
+    onAuthChange?: (userId: string | null) => void | Promise<void>;
     topBarHeight?: number;
   };
 
@@ -132,10 +141,27 @@
   let scrollEl: HTMLDivElement | null = $state(null);
   let banner: Banner = $state(null);
   let otp: OtpOriginator | null = $state(null);
+  // Owned here, not in Welcome, so a sign-up's typed email/password survive the
+  // OtpProceed step: when verification proceeds, the form jumps back already
+  // populated (and is held disabled) instead of flashing empty fields before the
+  // account view appears.
+  let email = $state("");
+  let password = $state("");
   let userAnyExpanded = $state(false);
   let welcomeExpanded = $state(true);
   const anyExpanded = $derived(!me.user ? welcomeExpanded : userAnyExpanded);
   const form = new FormState();
+
+  // Once signed in, discard the unauthenticated form's credentials so they don't
+  // linger and pre-fill the form after a later sign-out. During the sign-up
+  // jump-back me.user is still null, so the repopulated form stays intact; this
+  // only fires once the account view has taken over.
+  $effect(() => {
+    if (me.user) {
+      email = "";
+      password = "";
+    }
+  });
 
   const sessionStatus: SessionStatus = $derived(
     invalidKind ?? (me.sessionFresh ? "fresh" : "stale"),
@@ -204,7 +230,7 @@
             {#if otp}
               <OtpProceed {otp} {form} bind:banner {loadMe} {setOtp} />
             {:else}
-              <Welcome {form} bind:banner {loadMe} {setOtp} />
+              <Welcome {form} bind:banner {loadMe} {setOtp} bind:email bind:password />
             {/if}
           {/snippet}
         </ActionRow>

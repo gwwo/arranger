@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { Cooldown, FormState } from "./utils.svelte";
   import { api, type OtpOriginator, type Banner } from "./types";
 
@@ -24,6 +25,18 @@
 
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Once the proceed cooldown elapses, drop a lingering failure note so it
+  // doesn't outlast the point at which the user can retry. Driven solely by the
+  // cooldown — banner is read untracked so a later flash can't retrigger this.
+  let proceedWasCooling = false;
+  $effect(() => {
+    const cooledDown = proceedCd.cool;
+    if (cooledDown && proceedWasCooling && untrack(() => banner)?.kind === "error") {
+      banner = null;
+    }
+    proceedWasCooling = !cooledDown;
+  });
 
   async function copyOtp() {
     try {
@@ -61,8 +74,11 @@
     }
   }
 
-  async function otpCancel() {
-    await form.wrap(() => api("otp-cancel", { actorToken: otp.actorToken }));
+  function otpCancel() {
+    // Switch back to the form right away and clean up the verification row in
+    // the background — the user shouldn't wait on it. Clear any failure note.
+    banner = null;
+    void api("otp-cancel", { actorToken: otp.actorToken }).catch(() => {});
     setOtp(null);
   }
 
@@ -87,8 +103,17 @@
     }
     proceedCd.start(PROCEED_COOLDOWN_S);
     if (shape === "session") {
+      // Jump back to the (still-populated) sign-up form and hold its button in
+      // the disabled "…" state — exactly the original sign-up submit look —
+      // while the new session loads, instead of flashing an empty, enabled form
+      // before the account view replaces it.
+      form.busy = true;
       setOtp(null);
-      await loadMe({ newUser: !!r.data?.newUser });
+      try {
+        await loadMe({ newUser: !!r.data?.newUser });
+      } finally {
+        form.busy = false;
+      }
       flash("info", "Account created and signed in.");
     } else if (shape === "ok") {
       setOtp(null);
@@ -149,8 +174,3 @@
     I've verified. Proceed{proceedCd.cool ? "" : ` (${proceedCd.remain}s)`}
   </button>
 </div>
-{#if banner}
-  <p class="mt-4 text-sm {banner.kind === 'error' ? 'text-red-600' : 'text-emerald-700'}">
-    {banner.text}
-  </p>
-{/if}
