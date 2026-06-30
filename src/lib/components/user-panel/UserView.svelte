@@ -475,6 +475,13 @@
   const hasGoogleCred = $derived(
     me.user ? me.credentials.some((c) => c.providerId === "google") : false,
   );
+  const hasGithubCred = $derived(
+    me.user ? me.credentials.some((c) => c.providerId === "github") : false,
+  );
+  // Sign-in methods that could re-enable reset if the password is forgotten.
+  const reEnableProviderLabel = $derived(
+    [hasGoogleCred && "Google", hasGithubCred && "GitHub"].filter(Boolean).join(" or "),
+  );
   const googleCred = $derived(
     me.credentials.find((c) => c.providerId === "google") ?? null,
   );
@@ -665,9 +672,13 @@
           </div>
         {:else}
           <form onsubmit={doDisableReset} class="space-y-2">
-            {#if hasGoogleCred}
+            <p class="text-xs text-neutral-600">
+              Disable email-based password reset. You'll no longer be able to reset a forgotten
+              password by email.
+            </p>
+            {#if reEnableProviderLabel}
               <p class="text-xs text-amber-800">
-                If you forget your password, you'll need to sign in with Google to re-enable reset.
+                If you forget your password, you'll need to sign in with {reEnableProviderLabel} to re-enable reset.
               </p>
             {:else}
               <p class="text-xs text-amber-800">
